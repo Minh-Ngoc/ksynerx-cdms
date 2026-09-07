@@ -1,0 +1,83 @@
+# CDMS Prototype Todo
+
+- [x] Task 1: Align Tooling Around Jest and Strict Verification
+  - Acceptance: Jest unit/e2e tests run, `pnpm typecheck` exists, Vitest is not introduced.
+  - Verify: `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`.
+- [x] Task 2: Bootstrap Config and Environment Validation
+  - Acceptance: Validated config includes all SPEC defaults and rejects invalid values.
+  - Verify: `pnpm typecheck`, `pnpm test -- config`.
+- [x] Task 3: Docker Compose and Process Roles
+  - Acceptance: `cdms`, `worker`, `postgres`, and `redis` roles use one source project and same image where practical.
+  - Verify: `docker compose config`, `docker compose build`.
+- [x] Task 4: Database Module, Data Source, and Initial Migrations
+  - Acceptance: Migrations create all core tables and constraints from empty PostgreSQL, including the durable import enqueue-completion signal; `synchronize: true` is unused.
+  - Verify: `pnpm test:integration -- database`.
+- [x] Task 5: API Contract DTOs and Error Shape
+  - Acceptance: DTOs match SPEC and edge inputs are validated.
+  - Verify: `pnpm typecheck`, `pnpm test -- dto`.
+- [x] Task 6: Canonical Normalization and Fingerprinting Tests First
+  - Acceptance: Red tests cover all ingestion sources, decimal strings, canonical JSON, and SHA-256 fingerprints.
+  - Verify: `pnpm test -- fingerprint`.
+- [ ] Task 7: Canonical Normalization and Fingerprinting Implementation
+  - Acceptance: Shared canonical payload/fingerprint behavior passes tests and is not duplicated.
+  - Verify: `pnpm typecheck`, `pnpm test -- fingerprint`.
+- [ ] Task 8: Advisory Lock Helper Tests First
+  - Acceptance: Red tests define stable key derivation, collision behavior, and transaction-scoped lock expectations.
+  - Verify: `pnpm test -- advisory`, `pnpm test:integration -- advisory`.
+- [ ] Task 9: Advisory Lock Helper Implementation
+  - Acceptance: PostgreSQL transaction-scoped advisory lock works through TypeORM and is tested.
+  - Verify: `pnpm typecheck`, `pnpm test:integration -- advisory`.
+- [ ] Task 10: ChangeProcessor Behavior Tests First
+  - Acceptance: Red tests cover accepted, duplicate, stale, conflict, and outbox atomicity.
+  - Verify: `pnpm test -- change-processor`, `pnpm test:integration -- changes`.
+- [ ] Task 11: Transactional ChangeProcessor Implementation
+  - Acceptance: Exactly-once effect decision table and atomic accepted writes pass.
+  - Verify: `pnpm typecheck`, `pnpm test:integration -- changes`.
+- [ ] Task 12: Inventory Emulator
+  - Acceptance: Inventory endpoints, numeric price, version increments, seed count, and composite cursor work.
+  - Verify: `pnpm test -- inventory`, `pnpm test:e2e -- inventory`.
+- [ ] Task 13: BullMQ Infrastructure and Worker Process Role
+  - Acceptance: API enqueues and separate worker process consumes with bounded concurrency.
+  - Verify: `pnpm test -- queue`, `pnpm test:integration -- queue`, `docker compose config`.
+- [ ] Task 14: Webhook Ingestion
+  - Acceptance: `202` only after enqueue; invalid payload gives `400`; Redis enqueue failure gives retriable failure.
+  - Verify: `pnpm test -- webhook`, `pnpm test:e2e -- webhook`.
+- [ ] Task 15: Polling Composite Checkpoint Tests First
+  - Acceptance: Red tests prove `(updatedAt, productId)` ordering and no checkpoint advance after enqueue failure.
+  - Verify: `pnpm test -- polling`, `pnpm test:integration -- polling`.
+- [ ] Task 16: Polling Scheduler and Safe Checkpoint Implementation
+  - Acceptance: Polling uses stable composite cursor and advances checkpoint only after whole page enqueue succeeds.
+  - Verify: `pnpm typecheck`, `pnpm test:integration -- polling`.
+- [ ] Task 17: Transactional Outbox Publisher and Downstream Consumer
+  - Acceptance: Pending events publish to dedicated BullMQ downstream queue; duplicate-tolerant downstream handling does not mutate business state or violate DB invariants, and duplicate logs are acceptable.
+  - Verify: `pnpm test -- outbox`, `pnpm test:integration -- outbox`.
+- [ ] Task 18: Excel Streaming, Upload Limit, Backpressure, and Redis Retry Tests First
+  - Acceptance: Red tests cover streaming, limits, bounded batches, retry timeout, and malformed rows.
+  - Verify: `pnpm test -- imports`, `pnpm test:e2e -- imports`.
+- [ ] Task 19: Import Job Lifecycle and Excel Streaming Implementation
+  - Acceptance: Uploads stream, enforce `100MB` default limit, use bounded batches, transition `CREATED -> UPLOADING -> PROCESSING`, record enqueue completion, and do not mark `COMPLETED` after upload/enqueue alone.
+  - Verify: `pnpm typecheck`, `pnpm test:e2e -- imports`.
+- [ ] Task 20: Atomic Redis Progress Counters and Import Batch Worker
+  - Acceptance: Workers own `PROCESSING -> COMPLETED`; completion requires enqueue phase completed and `rowsProcessed = rowsRead`; concurrent final workers create one terminal state.
+  - Verify: `pnpm test -- progress`, `pnpm test:integration -- imports`.
+- [ ] Task 21: SSE Progress and Import Status API
+  - Acceptance: Status API works; SSE sends latest snapshot first and only real progress/completion/failure events.
+  - Verify: `pnpm test:e2e -- imports`.
+- [ ] Task 22: Structured Logging and Health Checks
+  - Acceptance: Logs include required context fields where applicable; health checks required dependencies.
+  - Verify: `pnpm test -- health`, `pnpm test:e2e -- health`.
+- [ ] Task 23: Required Concurrency and Failure Proof Tests
+  - Acceptance: Required concurrency, Redis failure, polling checkpoint, import lifecycle race, progress invariant, and duplicate-tolerant outbox proofs pass.
+  - Verify: `pnpm test:integration`, `pnpm test:e2e`.
+- [ ] Task 24: k6 Spike Tests and DB Invariant Verification
+  - Acceptance: Spike test reports attempts, unique changes, persisted rows, prevented duplicates/stale, latency, errors, backlog.
+  - Verify: `k6 run load-tests/spike.js`, invariant query command.
+- [ ] Task 25: Bilingual Documentation and ADRs
+  - Acceptance: README/docs/ADRs exist in English and Vietnamese and describe actual implementation.
+  - Verify: required-doc `rg` checks and manual bilingual review.
+- [ ] Task 26: AI Usage Disclosure
+  - Acceptance: AI-assisted work and verification evidence are accurately disclosed in both languages.
+  - Verify: `rg -n "AI|commands|unfinished|verified" docs/en/ai-usage.md docs/vi/ai-usage.md`.
+- [ ] Task 27: Final Review and Code Simplification
+  - Acceptance: Review findings addressed; unnecessary complexity removed without weakening guarantees.
+  - Verify: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:integration`, `pnpm test:e2e`, Docker and k6 checks.

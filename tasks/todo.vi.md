@@ -1,0 +1,83 @@
+# Todo Prototype CDMS
+
+- [x] Task 1: Can Chinh Tooling Ve Jest Va Strict Verification
+  - Acceptance: Jest unit/e2e tests chay, co `pnpm typecheck`, khong gioi thieu Vitest.
+  - Verify: `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`.
+- [x] Task 2: Bootstrap Config Va Environment Validation
+  - Acceptance: Validated config gom moi SPEC defaults va reject invalid values.
+  - Verify: `pnpm typecheck`, `pnpm test -- config`.
+- [x] Task 3: Docker Compose Va Process Roles
+  - Acceptance: `cdms`, `worker`, `postgres`, va `redis` roles dung mot source project va cung image khi kha thi.
+  - Verify: `docker compose config`, `docker compose build`.
+- [x] Task 4: Database Module, Data Source, Va Initial Migrations
+  - Acceptance: Migrations tao core tables/constraints tu PostgreSQL rong, gom durable import enqueue-completion signal; khong dung `synchronize: true`.
+  - Verify: `pnpm test:integration -- database`.
+- [x] Task 5: API Contract DTOs Va Error Shape
+  - Acceptance: DTOs khop SPEC va edge inputs duoc validate.
+  - Verify: `pnpm typecheck`, `pnpm test -- dto`.
+- [x] Task 6: Tests Truoc Cho Canonical Normalization Va Fingerprinting
+  - Acceptance: Red tests cover ingestion sources, decimal strings, canonical JSON, va SHA-256 fingerprints.
+  - Verify: `pnpm test -- fingerprint`.
+- [ ] Task 7: Implement Canonical Normalization Va Fingerprinting
+  - Acceptance: Shared canonical payload/fingerprint behavior pass tests va khong duplicate.
+  - Verify: `pnpm typecheck`, `pnpm test -- fingerprint`.
+- [ ] Task 8: Tests Truoc Cho Advisory Lock Helper
+  - Acceptance: Red tests dinh nghia stable key derivation, collision behavior, va transaction-scoped lock expectations.
+  - Verify: `pnpm test -- advisory`, `pnpm test:integration -- advisory`.
+- [ ] Task 9: Implement Advisory Lock Helper
+  - Acceptance: PostgreSQL transaction-scoped advisory lock hoat dong qua TypeORM va duoc test.
+  - Verify: `pnpm typecheck`, `pnpm test:integration -- advisory`.
+- [ ] Task 10: Tests Truoc Cho ChangeProcessor Behavior
+  - Acceptance: Red tests cover accepted, duplicate, stale, conflict, va outbox atomicity.
+  - Verify: `pnpm test -- change-processor`, `pnpm test:integration -- changes`.
+- [ ] Task 11: Implement Transactional ChangeProcessor
+  - Acceptance: Exactly-once effect decision table va atomic accepted writes pass.
+  - Verify: `pnpm typecheck`, `pnpm test:integration -- changes`.
+- [ ] Task 12: Inventory Emulator
+  - Acceptance: Inventory endpoints, numeric price, version increments, seed count, va composite cursor hoat dong.
+  - Verify: `pnpm test -- inventory`, `pnpm test:e2e -- inventory`.
+- [ ] Task 13: BullMQ Infrastructure Va Worker Process Role
+  - Acceptance: API enqueue va separate worker process consume voi bounded concurrency.
+  - Verify: `pnpm test -- queue`, `pnpm test:integration -- queue`, `docker compose config`.
+- [ ] Task 14: Webhook Ingestion
+  - Acceptance: `202` chi sau enqueue; invalid payload tra `400`; Redis enqueue failure tra retriable failure.
+  - Verify: `pnpm test -- webhook`, `pnpm test:e2e -- webhook`.
+- [ ] Task 15: Tests Truoc Cho Polling Composite Checkpoint
+  - Acceptance: Red tests chung minh `(updatedAt, productId)` ordering va no checkpoint advance after enqueue failure.
+  - Verify: `pnpm test -- polling`, `pnpm test:integration -- polling`.
+- [ ] Task 16: Implement Polling Scheduler Va Safe Checkpoint
+  - Acceptance: Polling dung stable composite cursor va chi advance checkpoint sau khi full page enqueue thanh cong.
+  - Verify: `pnpm typecheck`, `pnpm test:integration -- polling`.
+- [ ] Task 17: Transactional Outbox Publisher Va Downstream Consumer
+  - Acceptance: Pending events publish vao dedicated BullMQ downstream queue; duplicate-tolerant downstream handling khong mutate business state hoac violate DB invariants, va duplicate logs duoc chap nhan.
+  - Verify: `pnpm test -- outbox`, `pnpm test:integration -- outbox`.
+- [ ] Task 18: Tests Truoc Cho Excel Streaming, Upload Limit, Backpressure, Va Redis Retry
+  - Acceptance: Red tests cover streaming, limits, bounded batches, retry timeout, va malformed rows.
+  - Verify: `pnpm test -- imports`, `pnpm test:e2e -- imports`.
+- [ ] Task 19: Implement Import Job Lifecycle Va Excel Streaming
+  - Acceptance: Uploads stream, enforce default `100MB`, dung bounded batches, transition `CREATED -> UPLOADING -> PROCESSING`, ghi enqueue completion, va khong mark `COMPLETED` chi sau upload/enqueue.
+  - Verify: `pnpm typecheck`, `pnpm test:e2e -- imports`.
+- [ ] Task 20: Atomic Redis Progress Counters Va Import Batch Worker
+  - Acceptance: Workers so huu `PROCESSING -> COMPLETED`; completion can enqueue phase completed va `rowsProcessed = rowsRead`; concurrent final workers tao mot terminal state.
+  - Verify: `pnpm test -- progress`, `pnpm test:integration -- imports`.
+- [ ] Task 21: SSE Progress Va Import Status API
+  - Acceptance: Status API hoat dong; SSE gui latest snapshot truoc va chi real progress/completion/failure events.
+  - Verify: `pnpm test:e2e -- imports`.
+- [ ] Task 22: Structured Logging Va Health Checks
+  - Acceptance: Logs co required context fields khi phu hop; health checks required dependencies.
+  - Verify: `pnpm test -- health`, `pnpm test:e2e -- health`.
+- [ ] Task 23: Required Concurrency Va Failure Proof Tests
+  - Acceptance: Required concurrency, Redis failure, polling checkpoint, import lifecycle race, progress invariant, va duplicate-tolerant outbox proofs pass.
+  - Verify: `pnpm test:integration`, `pnpm test:e2e`.
+- [ ] Task 24: k6 Spike Tests Va DB Invariant Verification
+  - Acceptance: Spike test report attempts, unique changes, persisted rows, prevented duplicates/stale, latency, errors, backlog.
+  - Verify: `k6 run load-tests/spike.js`, invariant query command.
+- [ ] Task 25: Bilingual Documentation Va ADRs
+  - Acceptance: README/docs/ADRs co tieng Anh va tieng Viet va mo ta actual implementation.
+  - Verify: required-doc `rg` checks va manual bilingual review.
+- [ ] Task 26: AI Usage Disclosure
+  - Acceptance: AI-assisted work va verification evidence duoc disclose chinh xac bang ca hai ngon ngu.
+  - Verify: `rg -n "AI|commands|unfinished|verified" docs/en/ai-usage.md docs/vi/ai-usage.md`.
+- [ ] Task 27: Final Review Va Code Simplification
+  - Acceptance: Review findings duoc xu ly; unnecessary complexity duoc bo ma khong lam yeu guarantees.
+  - Verify: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:integration`, `pnpm test:e2e`, Docker va k6 checks.
