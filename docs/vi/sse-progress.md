@@ -2,22 +2,22 @@
 
 ## Endpoints
 
-- `GET /imports/:id` tra import status ben vung.
-- `GET /imports/:id/progress` tra `text/event-stream`.
+- `GET /imports/:id` trả import status bền vững.
+- `GET /imports/:id/progress` trả `text/event-stream`.
 
-Event name la `progress`, `completed`, va `failed`. Moi event co `importId`, `status`, `rowsRead`, `rowsProcessed`, `rowsSucceeded`, `rowsFailed`, `totalRows`, va `percent`.
+Event name là `progress`, `completed`, và `failed`. Mỗi event có `importId`, `status`, `rowsRead`, `rowsProcessed`, `rowsSucceeded`, `rowsFailed`, `totalRows`, và `percent`.
 
-## Authority va reconnect
+## Authority và reconnect
 
-PostgreSQL la authority. Server subscribe Redis Pub/Sub truoc khi doc durable row, sau do gui PostgreSQL snapshot moi nhat truoc. Notification den trong setup duoc buffer va emit sau snapshot. Redis chi la live hint; subscription hong se dong live view, reconnect se doc PostgreSQL lai.
+PostgreSQL là authority. Server subscribe Redis Pub/Sub trước khi đọc durable row, sau đó gửi PostgreSQL snapshot mới nhất trước. Notification đến trong setup được buffer và emit sau snapshot. Redis chỉ là live hint; subscription hỏng sẽ làm gián đoạn live view, reconnect sẽ đọc PostgreSQL lại.
 
-Terminal status dong stream. Client disconnect unsubscribe va disconnect Redis subscriber duplicate. SSE khong phai durable messaging va khong replay event history.
+Terminal status đóng stream. Client disconnect sẽ hủy đăng ký và ngắt kết nối Redis subscriber đã tạo cho client. SSE không phải durable messaging và không replay event history.
 
-`percent` la `null` khi chua biet `totalRows`. Import zero-row da completed co the tra 100%; zero-row chua terminal khong tao phan tram gia. Snapshot progress monotonic va khong lui counter hay lifecycle status.
+`percent` là `null` khi chưa biết `totalRows`. Import zero-row đã completed có thể trả 100%; zero-row chưa terminal không tạo phần trăm giả. Snapshot progress monotonic và không lui counter hay lifecycle status.
 
 ## Import invariants
 
-Uploader tang `rowsRead`. Batch worker atomically account `rowsProcessed`, `rowsSucceeded`, va `rowsFailed`. PostgreSQL enforce:
+Uploader tăng `rowsRead`. Batch worker atomically account `rowsProcessed`, `rowsSucceeded`, và `rowsFailed`. PostgreSQL enforce:
 
 ```text
 rowsProcessed = rowsSucceeded + rowsFailed
@@ -25,4 +25,4 @@ rowsProcessed <= rowsRead
 COMPLETED => enqueue phase finished and rowsProcessed = rowsRead
 ```
 
-Redis mirror committed snapshot de live update nhanh; Redis khong thay the durable state.
+Redis mirror committed snapshot để live update nhanh; Redis không thay thế durable state.

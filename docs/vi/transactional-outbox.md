@@ -1,14 +1,14 @@
 # Transactional Outbox
 
-Accepted product change commit cac record sau cung nhau:
+Accepted product change commit các record sau cùng nhau:
 
 ```text
 product_state + product_changes + outbox_events -> mot PostgreSQL transaction
 ```
 
-Dieu nay loai bo database-to-queue dual-write gap cho business changes da commit. Outbox publisher claim pending rows theo bounded batch bang `FOR UPDATE SKIP LOCKED`, publish event vao dedicated `cdms-downstream` BullMQ queue, va chi mark `PUBLISHED` sau enqueue thanh cong. Failure tang attempts, giu event pending, va luu error da sanitize.
+Điều này loại bỏ database-to-queue dual-write gap cho business changes đã commit. Outbox publisher claim pending rows theo bounded batch bằng `FOR UPDATE SKIP LOCKED`, publish event vào dedicated `cdms-downstream` BullMQ queue, và chỉ mark `PUBLISHED` sau enqueue thành công. Failure tăng attempts, giữ event pending, và lưu error đã sanitize.
 
-Crash window duoc chu dong ghi ro:
+Crash window được chủ động ghi rõ:
 
 ```text
 downstream queue publish thanh cong
@@ -16,9 +16,9 @@ downstream queue publish thanh cong
 -> publisher retry committed event
 ```
 
-Vi vay publication co the xay ra nhieu hon mot lan. Downstream consumer la duplicate-tolerant, khong phai strictly idempotent: consumer chi structured logging, duplicate log lines duoc chap nhan, va duplicate delivery khong mutate business state hay violate database invariants. Khong them processed-event table hay Inbox Pattern chi de deduplicate logs.
+Vì vậy publication có thể xảy ra nhiều hơn một lần. Downstream consumer là duplicate-tolerant, không phải strictly idempotent: consumer chỉ structured logging, duplicate log lines được chấp nhận, và duplicate delivery không mutate business state hay violate database invariants. Không thêm processed-event table hay Inbox Pattern chỉ để deduplicate logs.
 
-Outbox bao ve boundary PostgreSQL commit den asynchronous publication. Outbox khong dam bao exactly-once delivery va khong sua duoc catastrophic Redis loss.
+Outbox bảo vệ boundary PostgreSQL commit đến asynchronous publication. Outbox không đảm bảo exactly-once delivery và không sửa được catastrophic Redis loss.
 
 ## Tham khao
 

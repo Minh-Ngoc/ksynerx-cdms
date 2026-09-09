@@ -1,20 +1,20 @@
-# ADR-005: Canonical Change Processing va Version Rules
+# ADR-005: Canonical Change Processing và Version Rules
 
 ## Status
 Accepted
 
 ## Context
 
-Ba ingestion path phai cho cung business result khi product state tuong duong.
+Ba ingestion path phải cho cùng business result khi product state tương đương.
 
 ## Decision
 
-Normalize price thanh decimal string, fingerprint cac canonical payload field, va ap dung decision table `ACCEPTED`, `DUPLICATE`, `STALE`, `VERSION_CONFLICT` trong mot transaction.
+Normalize price thành decimal string, fingerprint các canonical payload field, và áp dụng decision table `ACCEPTED`, `DUPLICATE`, `STALE`, `VERSION_CONFLICT` trong một transaction.
 
 ## Consequences
 
-Delivery tuong duong giua cac source an toan. Du lieu conflict cung version duoc hien thi thay vi bi overwrite ngam.
+Delivery tương đương giữa các source an toàn. Dữ liệu conflict cùng version được hiển thị thay vì bị overwrite ngầm.
 
 ## Alternatives Considered
 
-Business rule rieng theo source va queue-only deduplication bi reject.
+Business rule riêng theo source và queue-only deduplication bị reject.

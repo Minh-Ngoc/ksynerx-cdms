@@ -2,25 +2,25 @@
 
 ## Ingestion
 
-- Webhook validation failure tra `400`. Redis/BullMQ failure truoc `queue.add()` tra `503` retriable; webhook khong ghi business database.
-- Polling chi ghi composite checkpoint sau khi ca page duoc enqueue. Enqueue hoac checkpoint failure giu checkpoint cu. Row da enqueue co the bi re-poll, an toan vi processing idempotent.
-- Excel failure khi doc multipart, enforce size, parse workbook, hoac retry Redis co gioi han se mark import `FAILED`. Batch da BullMQ chap nhan khong bi rollback; `FAILED` nghia la ingestion khong dat normal terminal processing.
+- Webhook validation failure trả `400`. Redis/BullMQ failure trước `queue.add()` trả `503` retriable; webhook không ghi business database.
+- Polling chỉ ghi composite checkpoint sau khi cả page được enqueue. Enqueue hoặc checkpoint failure giữ checkpoint cũ. Row đã enqueue có thể bị re-poll, an toàn vì processing idempotent.
+- Excel failure khi đọc multipart, enforce size, parse workbook, hoặc retry Redis có giới hạn sẽ mark import `FAILED`. Batch đã BullMQ chấp nhận không bị rollback; `FAILED` nghĩa là ingestion không đạt normal terminal processing.
 
-## Worker va database
+## Worker và database
 
-- Database failure truoc commit rollback transaction va BullMQ retry job.
-- Worker crash truoc commit khong tao accepted change dang do.
-- Worker crash sau commit co the tao job retry; PostgreSQL tra `DUPLICATE` hoac `STALE` ma khong tao history row thu hai.
-- Import row failure bat ngo duoc retry den final BullMQ attempt. O final attempt, row do vao `rowsFailed` va cac row khac van co the dat terminal outcome.
+- Database failure trước commit rollback transaction và BullMQ retry job.
+- Worker crash trước commit không tạo accepted change dở dang.
+- Worker crash sau commit có thể tạo job retry; PostgreSQL trả `DUPLICATE` hoặc `STALE` mà không tạo history row thứ hai.
+- Import row failure bất ngờ được retry đến final BullMQ attempt. Ở final attempt, row đổ vào `rowsFailed` và các row khác vẫn có thể đạt terminal outcome.
 
 ## Outbox
 
-Publisher claim bounded batch bang `FOR UPDATE SKIP LOCKED`. Khi downstream enqueue fail, event van pending va attempts/error duoc ghi. Neu enqueue thanh cong nhung `PUBLISHED` update fail, event se duoc publish lai. Downstream consumer duplicate-tolerant: log trung lap duoc chap nhan va business table khong bi thay doi.
+Publisher claim bounded batch bằng `FOR UPDATE SKIP LOCKED`. Khi downstream enqueue fail, event vẫn pending và attempts/error được ghi. Nếu enqueue thành công nhưng `PUBLISHED` update fail, event sẽ được publish lại. Downstream consumer duplicate-tolerant: log trùng lặp được chấp nhận và business table không bị thay đổi.
 
-## Progress va health
+## Progress và health
 
-PostgreSQL la authority cho import lifecycle va counters. Redis Pub/Sub va Redis snapshot chi la live coordination best-effort. Redis Pub/Sub failure dong SSE live view; reconnect se doc PostgreSQL snapshot hien tai. `GET /health` probe PostgreSQL va Redis doc lap, tra `503` neu mot dependency bat buoc down. Health timeout mot giay gioi han HTTP probe nhung khong cancel PostgreSQL query dang chay.
+PostgreSQL là authority cho import lifecycle và counters. Redis Pub/Sub và Redis snapshot chỉ là live coordination best-effort. Redis Pub/Sub failure làm gián đoạn SSE live view; reconnect sẽ đọc PostgreSQL snapshot hiện tại. `GET /health` probe PostgreSQL và Redis độc lập, trả `503` nếu một dependency bắt buộc down. Health timeout một giây giới hạn HTTP probe nhưng không cancel PostgreSQL query đang chạy.
 
-## Gioi han
+## Giới hạn
 
-Mat Redis nghiem trong sau acknowledged enqueue co the mat queued work chua persist vao PostgreSQL. Prototype khong implement PostgreSQL Inbox Pattern. Excel staging dung local disk va parser chi ho tro XLSX subset can thiet.
+Mất Redis nghiêm trọng sau acknowledged enqueue có thể mất queued work chưa persist vào PostgreSQL. Prototype không implement PostgreSQL Inbox Pattern. Excel staging dùng local disk và parser chỉ hỗ trợ XLSX subset cần thiết.

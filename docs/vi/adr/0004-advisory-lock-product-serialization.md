@@ -5,16 +5,16 @@ Accepted
 
 ## Context
 
-`SELECT FOR UPDATE` khong serialize duoc first write khi chua co row `product_state`.
+`SELECT FOR UPDATE` không serialize được first write khi chưa có row `product_state`.
 
 ## Decision
 
-Acquire `pg_advisory_xact_lock` bang key signed 64-bit deterministic tu SHA-256 cua `productId` truoc khi doc hoac ghi state.
+Acquire `pg_advisory_xact_lock` bằng key signed 64-bit deterministic từ SHA-256 của `productId` trước khi đọc hoặc ghi state.
 
 ## Consequences
 
-Missing-row race dung chung serialization point. Hash collision co the giam parallelism nhung khong lam hong data. Lock tu release khi transaction ket thuc.
+Missing-row race dùng chung serialization point. Hash collision có thể giảm parallelism nhưng không làm hỏng data. Lock được release khi transaction kết thúc.
 
 ## Alternatives Considered
 
-Chi dung row lock, queue ordering, va Redis lock bi reject vi khong du cho correctness boundary.
+Chỉ dùng row lock, queue ordering, và Redis lock bị reject vì không đủ cho correctness boundary.

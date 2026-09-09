@@ -5,16 +5,16 @@ Accepted
 
 ## Context
 
-Ghi business state va publish asynchronous nhu hai operation rieng co the lam mat event da commit.
+Ghi business state và publish asynchronous như hai operation riêng có thể làm mất event đã commit.
 
 ## Decision
 
-Insert state, history va `outbox_events` trong cung PostgreSQL transaction. Worker publisher claim pending row theo bounded batch, enqueue downstream, roi mark published.
+Insert state, history và `outbox_events` trong cùng PostgreSQL transaction. Worker publisher claim pending row theo bounded batch, enqueue downstream, rồi mark published.
 
 ## Consequences
 
-Event da commit duoc bao ve qua retry publisher. Crash sau publish truoc mark co the tao duplicate delivery, vi vay consumer duplicate-tolerant va chi logging.
+Event đã commit được bảo vệ qua retry publisher. Crash sau publish trước mark có thể tạo duplicate delivery, vì vậy consumer duplicate-tolerant và chỉ logging.
 
 ## Alternatives Considered
 
-Direct dual-write va processed-event Inbox bi reject trong prototype nay.
+Direct dual-write và processed-event Inbox bị reject trong prototype này.

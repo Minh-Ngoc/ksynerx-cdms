@@ -1,30 +1,30 @@
 # Exactly-Once Effect
 
-Prototype nay cung cap exactly-once effect o PostgreSQL/business level. He thong khong cung cap exactly-once message delivery. BullMQ retry va duplicate delivery la input du kien.
+Prototype này cùng cấp exactly-once effect ở PostgreSQL/business level. Hệ thống không cùng cấp exactly-once message delivery. BullMQ retry và duplicate delivery là input dự kiến.
 
 ## Decision table
 
-| Input | State hien tai | Result | Database effect |
+| Input | State hiện tại | Result | Database effect |
 |---|---|---|---|
-| version thap hon | version moi hon da ton tai | `STALE` | khong ghi |
-| cung version, fingerprint canonical giong | cung state | `DUPLICATE` | khong ghi |
-| cung version, fingerprint khac | cung state | `VERSION_CONFLICT` | khong overwrite |
-| version moi hon hoac chua co state | absent/older | `ACCEPTED` | ghi history, state va outbox |
+| version thấp hơn | version mới hơn đã tồn tại | `STALE` | không ghi |
+| cùng version, fingerprint canonical giống hệt | cùng state | `DUPLICATE` | không ghi |
+| cùng version, fingerprint khác | cùng state | `VERSION_CONFLICT` | không overwrite |
+| version mới hơn hoặc chưa có state | absent/older | `ACCEPTED` | ghi history, state và outbox |
 
-Fingerprint chi dung canonical payload. Price la decimal string da normalize tuong thich PostgreSQL `NUMERIC(18,2)` va thu tu key JSON duoc co dinh. Delivery metadata nhu source va observed time khong tao same-version conflict gia.
+Fingerprint chỉ dùng canonical payload. Price là decimal string đã normalize tương thích PostgreSQL `NUMERIC(18,2)` và thứ tự key JSON được cố định. Delivery metadata như source và observed time không tạo same-version conflict giả.
 
-## Serialization va transaction
+## Serialization và transaction
 
-Moi product duoc serialize bang `pg_advisory_xact_lock`, acquire qua TypeORM manager gan voi transaction truoc khi doc `product_state`. Key la 8 bytes dau cua SHA-256 tren product ID UTF-8 da trim, dien giai thanh signed PostgreSQL `bigint`. Key deterministic giua process va restart. Collision 64-bit co the serialize product khong lien quan, nhung khong lam hong data vi lock chi them ordering.
+Mỗi product được serialize bằng `pg_advisory_xact_lock`, acquire qua TypeORM manager gắn với transaction trước khi đọc `product_state`. Key là 8 bytes đầu của SHA-256 trên product ID UTF-8 đã trim, diễn giải thành signed PostgreSQL `bigint`. Key deterministic giữa process và restart. Collision 64-bit có thể serialize product không liên quan, nhưng không làm hỏng data vì lock chỉ thêm ordering.
 
-Lock bao phu missing-row va existing-row race. Unique `(product_id, version)` van la database invariant phong ve. Accepted change insert `product_changes`, upsert `product_state`, va insert `outbox_events` trong mot PostgreSQL transaction.
+Lock bao phủ missing-row và existing-row race. Unique `(product_id, version)` vẫn là database invariant phòng vệ. Accepted change insert `product_changes`, upsert `product_state`, và insert `outbox_events` trong một PostgreSQL transaction.
 
-## Progress la mot van de rieng
+## Progress là một vẫn để riêng
 
-Business idempotency dung product/version/fingerprint trong `ChangeProcessor`. Import progress idempotency dung `importId + batchId` trong `import_batch_accounting`. Chi dung aggregate counters khong the nhan dien replay sau khi PostgreSQL commit nhung truoc khi BullMQ acknowledge job. Accounting table chi luu terminal progress delta; day khong phai PostgreSQL Inbox Pattern va khong luu message payload hay business state.
+Business idempotency dùng product/version/fingerprint trong `ChangeProcessor`. Import progress idempotency dùng `importId + batchId` trong `import_batch_accounting`. Chỉ dùng aggregate counters không thể nhận diện replay sau khi PostgreSQL commit nhưng trước khi BullMQ acknowledge job. Accounting table chỉ lưu terminal progress delta; đây không phải PostgreSQL Inbox Pattern và không lưu message payload hay business state.
 
-Uploader so huu `rowsRead`. Batch worker so huu terminal `rowsProcessed`, `rowsSucceeded`, `rowsFailed`. PostgreSQL giu `rowsProcessed = rowsSucceeded + rowsFailed` va `rowsProcessed <= rowsRead`. Completion can `enqueue_completed_at IS NOT NULL` va `rowsProcessed = rowsRead`.
+Uploader sở hữu `rowsRead`. Batch worker sở hữu terminal `rowsProcessed`, `rowsSucceeded`, `rowsFailed`. PostgreSQL giữ `rowsProcessed = rowsSucceeded + rowsFailed` và `rowsProcessed <= rowsRead`. Completion cần `enqueue_completed_at IS NOT NULL` và `rowsProcessed = rowsRead`.
 
 ## Evidence
 
-Task 23 verify 100 identical first writes tao mot accepted effect va 99 duplicate outcomes, gom missing-row race. Concurrent version 5 va 6 de lai final state version 6. Same-version competing payload tao `VERSION_CONFLICT`, khong last-writer-wins. Worker concurrency 8 van cho mot logical database effect trong integration proof. Cac test nay xac nhan invariant o concurrency da test, khong chung nhan infinite-scale correctness.
+Task 23 verify 100 identical first writes tạo một accepted effect và 99 duplicate outcomes, gồm missing-row race. Concurrent version 5 và 6 để lại final state version 6. Same-version competing payload tạo `VERSION_CONFLICT`, không last-writer-wins. Worker concurrency 8 vẫn cho một logical database effect trong integration proof. Các test này xác nhận invariant ở concurrency đã test, không chứng nhận infinite-scale correctness.

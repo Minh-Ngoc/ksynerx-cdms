@@ -1,20 +1,20 @@
-# ADR-009: SSE Progress Dua Tren PostgreSQL
+# ADR-009: SSE Progress Dựa Trên PostgreSQL
 
 ## Status
 Accepted
 
 ## Context
 
-Client can xem import progress live nhung reconnect phai khoi phuc durable state hien tai.
+Client cần xem import progress live nhưng reconnect phải khôi phục durable state hiện tại.
 
 ## Decision
 
-Gui PostgreSQL snapshot moi nhat truoc, sau do chi dung Redis Pub/Sub lam live hint. Dong stream khi terminal status hoac client disconnect.
+Gửi PostgreSQL snapshot mới nhất trước, sau đó chỉ dùng Redis Pub/Sub làm live hint. Đóng stream khi terminal status hoặc client disconnect.
 
 ## Consequences
 
-Redis failure co the dong live view nhung khong xoa durable progress. SSE khong phai durable messaging va khong replay history.
+Redis failure có thể làm gián đoạn live view nhưng không xóa durable progress. SSE không phải durable messaging và không replay history.
 
 ## Alternatives Considered
 
-Redis-only progress va durable event-stream subsystem bi reject.
+Redis-only progress và durable event-stream subsystem bị reject.

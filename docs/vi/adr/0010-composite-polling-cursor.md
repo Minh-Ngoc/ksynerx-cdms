@@ -1,20 +1,20 @@
-# ADR-010: Composite Polling Cursor On Dinh
+# ADR-010: Composite Polling Cursor Ổn định
 
 ## Status
 Accepted
 
 ## Context
 
-Checkpoint chi co timestamp co the bo qua product co cung update timestamp.
+Checkpoint chỉ có timestamp có thể bỏ qua product có cùng update timestamp.
 
 ## Decision
 
-Persist va query `(updated_at, product_id)` theo thu tu tang dan. Chi advance sau khi ca page duoc BullMQ chap nhan.
+Persist và query `(updated_at, product_id)` theo thứ tự tăng dần. Chỉ advance sau khi cả page được BullMQ chấp nhận.
 
 ## Consequences
 
-Tie co thu tu deterministic va enqueue failure tao re-poll duplicate thay vi bo sot change. Database processor xu ly duplicate nay.
+Tie có thứ tự deterministic và enqueue failure tạo re-poll duplicate thay vì bỏ sót change. Database processor xử lý duplicate này.
 
 ## Alternatives Considered
 
-Timestamp-only checkpoint va advance truoc enqueue completion bi reject.
+Timestamp-only checkpoint và advance trước enqueue completion bị reject.

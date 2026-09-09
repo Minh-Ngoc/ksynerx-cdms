@@ -5,16 +5,16 @@ Accepted
 
 ## Context
 
-Import batch co the replay sau progress database commit nhung truoc khi BullMQ acknowledge completion.
+Import batch có thể replay sau progress database commit nhưng trước khi BullMQ acknowledge completion.
 
 ## Decision
 
-Dung `import_batch_accounting(import_id, batch_id)` voi terminal delta trong atomic transaction. Marker chi la progress accounting, khong phai Inbox va khong phai business state.
+Dùng `import_batch_accounting(import_id, batch_id)` với terminal delta trong atomic transaction. Marker chỉ là progress accounting, không phải Inbox và không phải business state.
 
 ## Consequences
 
-Counter replay bi bo qua trong khi `rowsRead`, `rowsProcessed`, `rowsSucceeded`, `rowsFailed` van duoc constraint. Redis chi nhan live mirror best-effort.
+Counter replay bị bỏ qua trong khi `rowsRead`, `rowsProcessed`, `rowsSucceeded`, `rowsFailed` vẫn được constraint. Redis chỉ nhận live mirror best-effort.
 
 ## Alternatives Considered
 
-Chi dung aggregate counters va PostgreSQL Inbox day du bi reject.
+Chỉ dùng aggregate counters và PostgreSQL Inbox đầy đủ bị reject.

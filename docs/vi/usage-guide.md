@@ -1,20 +1,20 @@
-# Huong dan su dung cho nguoi dung va reviewer CDMS
+# Hướng dẫn sử dụng cho người dùng và reviewer CDMS
 
-Tai lieu nay la runbook thuc hanh de chay va danh gia CDMS prototype da hoan thien. Tai lieu bao gom setup local sach, ba luong ingestion, theo doi progress, kich ban failure, kiem tra database, test tu dong, concurrency proof va k6 spike proof local.
+Tài liệu này là runbook thực hành để chạy và đánh giá CDMS prototype đã hoàn thiện. Tài liệu bao gồm setup local sạch, ba luồng ingestion, theo dõi progress, kịch bản failure, kiểm tra database, test tự động, concurrency proof và k6 spike proof local.
 
-Vi du su dung http://localhost:3000, demo credential PostgreSQL trong .env.example va shell co curl. HTTP 202 ACCEPTED chi co nghia request da duoc chap nhan de enqueue bat dong bo. No khong co nghia worker da commit business change vao PostgreSQL.
+Ví dụ sử dụng http://localhost:3000, demo credential PostgreSQL trong .env.example và shell có curl. HTTP 202 ACCEPTED chỉ có nghĩa request đã được chấp nhận để enqueue bất đồng bộ. Nó không có nghĩa worker đã commit business change vào PostgreSQL.
 
-## 1. Yeu cau moi truong
+## 1. Yêu cầu môi trường
 
-Cai dat hoac chuan bi:
+Cài đặt hoặc chuẩn bị:
 
-- Node.js 24 hoac Node runtime hien tai tuong thich.
+- Node.js 24 hoặc Node runtime hiện tại tương thích.
 - pnpm 12.3.4.
-- Docker Desktop hoac Docker Compose tuong thich.
-- curl cho cac vi du HTTP.
-- k6 chi can cho spike proof tuy chon.
+- Docker Desktop hoặc Docker Compose tương thích.
+- curl cho các ví dụ HTTP.
+- k6 chỉ cần cho spike proof tùy chọn.
 
-Kiem tra tool:
+Kiểm tra tool:
 
 ~~~bash
 node --version
@@ -24,7 +24,7 @@ curl --version
 k6 version
 ~~~
 
-Mong doi pnpm --version in ra 12.3.4. Corepack chi la bootstrap tuy chon khi pnpm khong co tren PATH:
+Mong đợi `pnpm --version` in ra `12.3.4`. Corepack chỉ là bootstrap tùy chọn khi pnpm không có trên `PATH`:
 
 ~~~bash
 corepack enable
@@ -32,15 +32,15 @@ corepack prepare pnpm@12.3.4 --activate
 pnpm --version
 ~~~
 
-Sau bootstrap nay, tiep tuc dung cac lenh pnpm truc tiep.
+Sau bootstrap này, tiếp tục dùng các lệnh pnpm trực tiếp.
 
-Lenh k6 khong can cho review API va integration thong thuong. Repository dung mot NestJS project va hai runtime role: API process va worker process.
+Lệnh k6 không cần cho review API và integration thông thường. Repository dùng một NestJS project và hai runtime role: API process và worker process.
 
-## 2. Khoi dong project
+## 2. Khởi động project
 
-### Lua chon A: Docker Compose
+### Lựa chọn A: Docker Compose
 
-Chay tu repository root:
+Chạy từ repository root:
 
 ~~~bash
 pnpm install
@@ -48,24 +48,24 @@ docker compose up --build -d
 pnpm migration:run
 ~~~
 
-Compose khoi dong:
+Compose khởi động:
 
-- cdms: HTTP API, polling scheduler, upload ingestion, SSE va health checks.
-- worker: change consumer, import-batch consumer, outbox publication va downstream logging.
-- postgres: PostgreSQL 16, mac dinh mo host port 5432.
-- redis: Redis 7, mac dinh mo host port 6379.
+- cdms: HTTP API, polling scheduler, upload ingestion, SSE và health checks.
+- worker: change consumer, import-batch consumer, outbox publication và downstream logging.
+- postgres: PostgreSQL 16, mặc định mở host port 5432.
+- redis: Redis 7, mặc định mở host port 6379.
 
-API tai http://localhost:3000. Migration duoc chay bang lenh rieng; docker compose up --build khong tu dong thay doi database schema.
+API tại http://localhost:3000. Migration được chạy bằng lệnh riêng; docker compose up --build không tự động thay đổi database schema.
 
-Theo doi log ung dung:
+Theo dõi log ứng dụng:
 
 ~~~bash
 docker compose logs -f cdms worker
 ~~~
 
-### Lua chon B: API va worker process chay local
+### Lựa chọn B: API và worker process chạy local
 
-Dung cach nay khi can thay TypeScript application process trong hai terminal rieng:
+Dùng cách này khi cần thấy TypeScript application process trong hai terminal riêng:
 
 ~~~bash
 pnpm install
@@ -75,7 +75,7 @@ pnpm build
 pnpm migration:run
 ~~~
 
-Sau do mo hai terminal tai repository root:
+Sau đó mở hai terminal tại repository root:
 
 ~~~bash
 pnpm start:prod
@@ -85,26 +85,26 @@ pnpm start:prod
 pnpm start:worker
 ~~~
 
-Khi can tu dong build lai trong development, API terminal co the dung pnpm start:dev; worker van phai chay rieng. Gia tri trong .env.example nham toi PostgreSQL va Redis tren localhost.
+Khi cần tự động build lại trong development, API terminal có thể dùng `pnpm start:dev`; worker vẫn phải chạy riêng. Giá trị trong `.env.example` nhằm tới PostgreSQL và Redis trên localhost.
 
-### Cau hinh anh huong walkthrough
+### Cấu hình cho walkthrough
 
-Default da validate:
+Default đã validate:
 
-| Bien | Mac dinh | Muc dich |
+| Biến | Mặc định | Mục đích |
 | --- | ---: | --- |
 | PORT | 3000 | HTTP port |
-| POLL_INTERVAL_MS | 5000 | Khoang polling inventory |
-| INVENTORY_SEED_COUNT | 1000 | So luong seed khi inventory rong |
-| IMPORT_BATCH_SIZE | 500 | So row moi import batch |
-| IMPORT_MAX_PENDING_BATCHES | 100 | Gioi han backpressure cua import |
-| IMPORT_MAX_FILE_SIZE_MB | 100 | Gioi han kich thuoc upload streaming |
-| IMPORT_REDIS_RETRY_TIMEOUT_MS | 30000 | Timeout retry enqueue Redis co gioi han |
-| CHANGE_WORKER_CONCURRENCY | 10 | Concurrency cua change worker |
-| OUTBOX_BATCH_SIZE | 100 | Kich thuoc batch cua outbox publisher |
-| OUTBOX_POLL_INTERVAL_MS | 1000 | Khoang polling outbox |
+| POLL_INTERVAL_MS | 5000 | Khoảng polling inventory |
+| INVENTORY_SEED_COUNT | 1000 | Số lượng seed khi inventory rỗng |
+| IMPORT_BATCH_SIZE | 500 | Số row mỗi import batch |
+| IMPORT_MAX_PENDING_BATCHES | 100 | Giới hạn backpressure của import |
+| IMPORT_MAX_FILE_SIZE_MB | 100 | Giới hạn kích thước upload streaming |
+| IMPORT_REDIS_RETRY_TIMEOUT_MS | 30000 | Timeout retry enqueue Redis có giới hạn |
+| CHANGE_WORKER_CONCURRENCY | 10 | Concurrency của change worker |
+| OUTBOX_BATCH_SIZE | 100 | Kích thước batch của outbox publisher |
+| OUTBOX_POLL_INTERVAL_MS | 1000 | Khoảng polling outbox |
 
-Dung product ID rieng nhu review-20260909-001 khi review thu cong. API chi seed inventory khi bang inventory rong, vi vay database moi co the co them seed products theo cau hinh.
+Dùng product ID riêng như `review-20260909-001` khi review thủ công. API chỉ seed inventory khi bảng inventory rỗng, vì vậy database mới có thể có thêm seed products theo cấu hình.
 
 ## 3. Health check
 
@@ -112,17 +112,17 @@ Dung product ID rieng nhu review-20260909-001 khi review thu cong. API chi seed 
 curl -i http://localhost:3000/health
 ~~~
 
-Khi PostgreSQL va Redis san sang, ket qua mong doi la HTTP 200 va response tuong tu:
+Khi PostgreSQL và Redis sẵn sàng, kết quả mong đợi là HTTP 200 và response tương tự:
 
 ~~~json
 {"status":"ok","dependencies":{"postgres":"up","redis":"up"}}
 ~~~
 
-Khi mot dependency khong san sang, mong doi HTTP 503, status la "error", va dependency bi loi duoc bao la "down". Day la check dau tien sau startup va sau moi failure test ha tang.
+Khi một dependency không sẵn sàng, mong đợi HTTP 503, status là "error", và dependency bị lỗi được báo là "down". Đây là check đầu tiên sau startup và sau mỗi failure test hạ tầng.
 
 ## 4. Inventory API smoke test
 
-Tao product. Luu id trong response de dung cho cac lenh doc va update:
+Tạo product. Lưu id trong response để dùng cho các lệnh đọc và update:
 
 ~~~bash
 curl -i -X POST http://localhost:3000/inventory/products \
@@ -130,16 +130,16 @@ curl -i -X POST http://localhost:3000/inventory/products \
   -d '{"sku":"REVIEW-SKU-001","name":"Reviewer product","price":"10.50","quantity":4}'
 ~~~
 
-Response co id, sku, name, price, quantity, version, createdAt va updatedAt. Product moi tao bat dau o version 1.
+Response có id, sku, name, price, quantity, version, createdAt và updatedAt. Product mới tạo bắt đầu ở version 1.
 
-Doc collection va mot product:
+Đọc collection và một product:
 
 ~~~bash
 curl -s http://localhost:3000/inventory/products
 curl -s http://localhost:3000/inventory/products/<product-id>
 ~~~
 
-Update mot hoac nhieu mutable field. Patch phai co it nhat mot field:
+Update một hoặc nhiều mutable field. Patch phải có ít nhất một field:
 
 ~~~bash
 curl -i -X PATCH http://localhost:3000/inventory/products/<product-id> \
@@ -147,18 +147,18 @@ curl -i -X PATCH http://localhost:3000/inventory/products/<product-id> \
   -d '{"price":"11.25","quantity":7}'
 ~~~
 
-Update lam tang version cua product. Product khong ton tai tra 404; price khong hop le, quantity am, hoac patch rong tra 400.
+Update làm tăng version của product. Product không tồn tại trả 404; price không hợp lệ, quantity âm, hoặc patch rỗng trả 400.
 
-## 5. Kich ban scheduled polling
+## 5. Kịch bản scheduled polling
 
-Polling doc inventory table theo interval va submit change da normalize voi source POLLING.
+Polling đọc inventory table theo interval và submit change đã normalize với source POLLING.
 
-1. Tao product bang inventory API va ghi lai id.
-2. Cho lau hon POLL_INTERVAL_MS; default it nhat nam giay.
-3. Query product_changes bang SQL o Section 11.
-4. Patch product, cho them mot polling interval, sau do query lai.
+1. Tạo product bằng inventory API và ghi lại id.
+2. Chờ lâu hơn `POLL_INTERVAL_MS`; default ít nhất năm giây.
+3. Query product_changes bằng SQL ở Section 11.
+4. Patch product, cho thêm một polling interval, sau đó query lại.
 
-Vi du update:
+Ví dụ update:
 
 ~~~bash
 curl -s -X PATCH http://localhost:3000/inventory/products/<product-id> \
@@ -166,11 +166,11 @@ curl -s -X PATCH http://localhost:3000/inventory/products/<product-id> \
   -d '{"quantity":8}'
 ~~~
 
-Polling checkpoint la composite cursor (updated_at, product_id). Checkpoint chi advance sau khi ca page da duoc BullMQ chap nhan, vi vay Redis enqueue failure khong am tham day checkpoint qua phan work chua duoc chap nhan. Polling, webhook va import deu di qua cung mot bo quy tac correctness cua PostgreSQL.
+Polling checkpoint là composite cursor (updated_at, product_id). Checkpoint chỉ advance sau khi cả page đã được BullMQ chấp nhận, vì vậy Redis enqueue failure không âm thầm đẩy checkpoint qua phần work chưa được chấp nhận. Polling, webhook và import đều đi qua cùng một bộ quy tắc correctness của PostgreSQL.
 
-## 6. Kich ban webhook
+## 6. Kịch bản webhook
 
-Gui mot change hop le. observedAt la tuy chon nhung duoc dung trong vi du de co ket qua lap lai duoc:
+Gửi một change hợp lệ. `observedAt` là tùy chọn nhưng được dùng trong ví dụ để có kết quả lặp lại được:
 
 ~~~bash
 curl -i -X POST http://localhost:3000/webhooks/inventory \
@@ -188,9 +188,9 @@ curl -i -X POST http://localhost:3000/webhooks/inventory \
   }'
 ~~~
 
-Ket qua mong doi: HTTP 202 va {"status":"ACCEPTED"}. Worker sau do xu ly change bat dong bo. Product ID trong webhook la logical product key; product khong can ton tai truoc trong inventory_products.
+Kết quả mong đợi: HTTP 202 và {"status":"ACCEPTED"}. Worker sau đó xử lý change bất đồng bộ. Product ID trong webhook là logical product key; product không cần tồn tại trước trong inventory_products.
 
-Request khong hop le bi reject truoc khi enqueue. Vi du nay thieu payload.price va quantity khong phai so nguyen:
+Request không hợp lệ bị reject trước khi enqueue. Ví dụ này thiếu payload.price và quantity không phải số nguyên:
 
 ~~~bash
 curl -i -X POST http://localhost:3000/webhooks/inventory \
@@ -198,11 +198,11 @@ curl -i -X POST http://localhost:3000/webhooks/inventory \
   -d '{"productId":"review-invalid-001","version":1,"payload":{"sku":"BAD","name":"Invalid","quantity":"four"}}'
 ~~~
 
-Ket qua mong doi: HTTP 400. Neu Redis khong san sang, webhook dung cau truc nhung khong enqueue duoc se tra HTTP 503; xem Section 13.
+Kết quả mong đợi: HTTP 400. Nếu Redis không sẵn sàng, webhook đúng cấu trúc nhưng không enqueue được sẽ trả HTTP 503; xem Section 13.
 
-### Proof duplicate, stale va conflict cung version
+### Proof duplicate, stale và conflict cùng version
 
-Dung mot product ID moi va gui version 5 mot lan:
+Dùng một product ID duy nhất và gửi version 5 một lần:
 
 ~~~bash
 curl -s -X POST http://localhost:3000/webhooks/inventory \
@@ -210,9 +210,9 @@ curl -s -X POST http://localhost:3000/webhooks/inventory \
   -d '{"productId":"review-version-001","version":5,"payload":{"sku":"REVIEW-VERSION-001","name":"Version five","price":"20.00","quantity":5}}'
 ~~~
 
-Cho worker drain, sau do gui lai dung request do. Delivery thu hai van duoc HTTP chap nhan nhung worker phan loai la duplicate va khong duoc tao them product_changes row hoac outbox event.
+Chờ worker drain, sau đó gửi lại đúng request đó. Delivery thứ hai vẫn được HTTP chấp nhận nhưng worker phân loại là duplicate và không được tạo thêm product_changes row hoặc outbox event.
 
-Gui version cu hon:
+Gửi version cũ hơn:
 
 ~~~bash
 curl -s -X POST http://localhost:3000/webhooks/inventory \
@@ -220,7 +220,7 @@ curl -s -X POST http://localhost:3000/webhooks/inventory \
   -d '{"productId":"review-version-001","version":4,"payload":{"sku":"REVIEW-VERSION-001","name":"Older value","price":"19.00","quantity":4}}'
 ~~~
 
-Day la stale delivery. No khong duoc lam state lui. Cuoi cung gui version 5 voi payload khac:
+Đây là stale delivery. Nó không được làm state lùi. Cuối cùng gửi version 5 với payload khác:
 
 ~~~bash
 curl -s -X POST http://localhost:3000/webhooks/inventory \
@@ -228,39 +228,39 @@ curl -s -X POST http://localhost:3000/webhooks/inventory \
   -d '{"productId":"review-version-001","version":5,"payload":{"sku":"REVIEW-VERSION-001","name":"Conflicting value","price":"99.00","quantity":99}}'
 ~~~
 
-Day la same-version conflict. No khong duoc ghi de state version 5 da duoc chap nhan. HTTP layer chi bao enqueue acceptance; cac phan loai duplicate, stale va conflict xuat hien trong worker logs va cac query proof database.
+Đây là same-version conflict. Nó không được ghi đè state version 5 đã được chấp nhận. HTTP layer chỉ báo enqueue acceptance; các phân loại duplicate, stale và conflict xuất hiện trong worker logs và các query proof database.
 
 ## 7. Excel import
 
-### Dinh dang workbook bat buoc
+### Định dạng workbook bắt buộc
 
-Upload workbook .xlsx co worksheet dau tien voi header row va thu tu chinh xac:
+Upload workbook `.xlsx` có worksheet đầu tiên với header row và thứ tự chính xác:
 
 ~~~text
 productId,version,sku,name,price,quantity,observedAt
 ~~~
 
-Tao workbook nho trong spreadsheet editor voi cac row nhu sau, sau do luu thanh review-products.xlsx:
+Tạo workbook nhỏ trong spreadsheet editor với các row như sau, sau đó lưu thành review-products.xlsx:
 
 | productId | version | sku | name | price | quantity | observedAt |
 | --- | ---: | --- | --- | ---: | ---: | --- |
 | review-import-001 | 1 | REVIEW-IMPORT-001 | Imported one | 12.50 | 3 | 2026-09-09T00:00:00.000Z |
 | review-import-002 | 1 | REVIEW-IMPORT-002 | Imported two | 15.00 | 8 | 2026-09-09T00:00:00.000Z |
 
-Ten multipart field chinh xac la file:
+Tên multipart field chính xác là `file`:
 
 ~~~bash
 curl -i -X POST http://localhost:3000/imports/products \
   -F 'file=@review-products.xlsx;type=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 ~~~
 
-Ket qua mong doi: HTTP 202 voi importId va status PROCESSING:
+Kết quả mong đợi: HTTP 202 với importId và status PROCESSING:
 
 ~~~json
 {"importId":"<import-id>","status":"PROCESSING"}
 ~~~
 
-Upload duoc streaming qua controlled temporary file va bounded processing pipeline. Gioi han mac dinh la 100 MB; toan bo workbook khong duoc buffer trong RAM.
+Upload được streaming qua controlled temporary file và bounded processing pipeline. Giới hạn mặc định là 100 MB; toàn bộ workbook không được buffer trong RAM.
 
 ### Poll import status
 
@@ -268,56 +268,56 @@ Upload duoc streaming qua controlled temporary file va bounded processing pipeli
 curl -s http://localhost:3000/imports/<import-id>
 ~~~
 
-Status response co id, filename, status, rowsRead, rowsProcessed, rowsSucceeded, rowsFailed, totalRows, enqueueCompletedAt, createdAt, completedAt va error. Terminal status thuong la COMPLETED hoac FAILED.
+Status response có id, filename, status, rowsRead, rowsProcessed, rowsSucceeded, rowsFailed, totalRows, enqueueCompletedAt, createdAt, completedAt và error. Terminal status thường là COMPLETED hoặc FAILED.
 
-### Theo doi progress bang SSE
+### Theo dõi progress bằng SSE
 
-Mo terminal thu hai truoc khi upload, hoac reconnect sau khi nhan import ID:
+Mở terminal thứ hai trước khi upload, hoặc reconnect sau khi nhận import ID:
 
 ~~~bash
 curl -N http://localhost:3000/imports/<import-id>/progress
 ~~~
 
-Stream gui progress, sau do completed hoac failed khi terminal. Event dau tien duoc dung lai tu PostgreSQL snapshot moi nhat; reconnect vi vay an toan cho viec quan sat status. percent co the la null khi chua biet totalRows. Terminal event se dong stream.
+Stream gửi progress, sau đó completed hoặc failed khi terminal. Event đầu tiên được dùng lại từ PostgreSQL snapshot mới nhất; reconnect vì vậy an toàn cho việc quan sát status. percent có thể là null khi chưa biết totalRows. Terminal event sẽ đóng stream.
 
-### Kiem tra malformed row va file-level failure
+### Kiểm tra malformed row và file-level failure
 
-De kiem tra row-level, giu header hop le chinh xac va them row co decimal price khong hop le, integer quantity khong hop le, hoac required value bi thieu. Vi du:
+Để kiểm tra row-level, giữ header hợp lệ chính xác và thêm row có decimal price không hợp lệ, integer quantity không hợp lệ, hoặc required value bị thiếu. Ví dụ:
 
 | productId | version | sku | name | price | quantity | observedAt |
 | --- | ---: | --- | --- | --- | ---: | --- |
 | review-import-valid | 1 | REVIEW-VALID | Valid row | 12.50 | 3 | 2026-09-09T00:00:00.000Z |
 | review-import-bad | 1 | REVIEW-BAD | Bad row | not-a-price | 3 | 2026-09-09T00:00:00.000Z |
 
-Luu thanh review-malformed-row.xlsx va upload. Import co the ket thuc o COMPLETED voi rowsFailed: 1; malformed row duoc account va khong bien mat am tham.
+Lưu thành `review-malformed-row.xlsx` và upload. Import có thể kết thúc ở COMPLETED với `rowsFailed: 1`; malformed row được account và không biến mất âm thầm.
 
-De kiem tra parser failure cap file, upload file khong phai XLSX:
+Để kiểm tra parser failure cấp file, upload file không phải XLSX:
 
 ~~~bash
 printf 'this is not an xlsx workbook\n' > corrupt.xlsx
 curl -i -X POST http://localhost:3000/imports/products -F 'file=@corrupt.xlsx'
 ~~~
 
-Hanh vi mong doi la import bi failed hoac request bi reject ngay, tuy parser loi o buoc nao. Workbook thieu hoac sap xep lai required header cung la file-level validation failure. File-level failure khong rollback cac batch da duoc Redis acknowledge; kiem tra import status va database rows de thay boundary da ghi nhan.
+Hành vi mong đợi là import bị failed hoặc request bị reject ngay, dù parser lỗi ở bước nào. Workbook thiếu hoặc sắp xếp lại required header cũng là file-level validation failure. File-level failure không rollback các batch đã được Redis acknowledge; kiểm tra import status và database rows để thấy boundary đã ghi nhận.
 
-## 8. Hanh vi import can verify
+## 8. Hành vi import cần verify
 
-- CREATED, UPLOADING, PROCESSING, COMPLETED va FAILED la cac trang thai trong lifecycle import.
-- Upload response thanh cong chi la enqueue acceptance, khong phai processing da hoan tat.
-- rowsRead, rowsProcessed, rowsSucceeded va rowsFailed la cac counter duoc persist.
-- Batch accounting idempotent theo (import_id, batch_id), vi vay retry batch khong dem row hai lan.
-- Redis enqueue dung retry co gioi han. Neu het timeout, import bi failed thay vi bi treo o trang thai mo ho.
-- Worker retry co the redeliver message; version, fingerprint, lock va unique constraint PostgreSQL bao ve business effect.
+- CREATED, UPLOADING, PROCESSING, COMPLETED và FAILED là các trạng thái trong lifecycle import.
+- Upload response thành công chỉ là enqueue acceptance, không phải processing đã hoàn tất.
+- rowsRead, rowsProcessed, rowsSucceeded và rowsFailed là các counter được persist.
+- Batch accounting idempotent theo `(import_id, batch_id)`, vì vậy retry batch không đếm row hai lần.
+- Redis enqueue dùng retry có giới hạn. Nếu hết timeout, import bị failed thay vì bị treo ở trạng thái mơ hồ.
+- Worker retry có thể redeliver message; version, fingerprint, lock và unique constraint PostgreSQL bảo vệ business effect.
 
 ## 9. Review outbox path
 
-Moi logical change moi duoc chap nhan se ghi business state, change history va pending transactional outbox event trong cung mot PostgreSQL transaction. Outbox publisher sau do gui BullMQ job downstream. Downstream consumer duoc thiet ke duplicate-tolerant va chi ghi structured log; no khong mutate business state.
+Mỗi logical change được chấp nhận sẽ ghi business state, change history và pending transactional outbox event trong cùng một PostgreSQL transaction. Outbox publisher sau đó gửi BullMQ job downstream. Downstream consumer được thiết kế duplicate-tolerant và chỉ ghi structured log; nó không mutate business state.
 
-Sau khi webhook hoac import da process, dung SQL o Section 11 de verify logical change duoc chap nhan co mot state row, mot history row cho version do va outbox event tuong ung. Downstream delivery bi lap duoc chap nhan trong prototype nay, nhung business state khong duoc lap.
+Sau khi webhook hoặc import đã process, dùng SQL ở Section 11 để verify logical change được chấp nhận có một state row, một history row cho version đó và outbox event tương ứng. Downstream delivery bị lặp được chấp nhận trong prototype này, nhưng business state không được lặp.
 
-## 10. Lenh verification tu dong
+## 10. Lệnh verification tự động
 
-Chay focused test truoc khi review mot subsystem:
+Chạy focused test trước khi review một subsystem:
 
 ~~~bash
 pnpm test:integration -- polling
@@ -326,9 +326,9 @@ pnpm test:e2e -- imports
 pnpm test:integration -- concurrency
 ~~~
 
-Concurrency suite la proof cho identical delivery dong thoi, missing-row race, stale update, same-version conflict va bounded worker effect. Suite cung bao gom advisory-lock va database invariant coverage.
+Concurrency suite là proof cho identical delivery đồng thời, missing-row race, stale update, same-version conflict và bounded worker effect. Suite cùng bao gồm advisory-lock và database invariant coverage.
 
-Chay day du bo verification:
+Chạy đầy đủ bộ verification:
 
 ~~~bash
 pnpm lint
@@ -340,17 +340,17 @@ pnpm build
 git diff --check
 ~~~
 
-Integration va end-to-end suite dung PostgreSQL local theo cau hinh va reset test data cua chung. Khong chay tren database co data can bao toan.
+Integration và end-to-end suite dùng PostgreSQL local theo cấu hình và reset test data dùng chung. Không chạy trên database có data cần bảo toàn.
 
-## 11. Kiem tra PostgreSQL
+## 11. Kiểm tra PostgreSQL
 
-Ket noi qua PostgreSQL container cua Compose:
+Kết nối qua PostgreSQL container của Compose:
 
 ~~~bash
 docker compose exec postgres psql -U cdms -d cdms
 ~~~
 
-Cac query huu ich:
+Các query huu ich:
 
 ~~~sql
 SELECT product_id, version, fingerprint, payload, updated_at
@@ -384,31 +384,31 @@ SELECT name, updated_at, product_id
 FROM polling_checkpoints;
 ~~~
 
-Query duplicate pair phai tra ve khong co row neu logical version duoc process dung. Voi accepted change thanh cong, doi chieu product_state, product_changes va outbox_events theo product ID va version. product_changes ghi source ingestion la POLLING, WEBHOOK hoac IMPORT.
+Query duplicate pair phải trả về không có row nếu logical version được process dùng. Với accepted change thành công, đối chiếu product_state, product_changes và outbox_events theo product ID và version. product_changes ghi source ingestion là POLLING, WEBHOOK hoặc IMPORT.
 
 ## 12. Concurrency proof
 
-Lenh focused:
+Lệnh focused:
 
 ~~~bash
 pnpm test:integration -- concurrency
 ~~~
 
-Proof bao gom cac ket qua mong doi:
+Proof bao gồm các kết quả mong đợi:
 
-- 100 first write giong nhau tao mot business effect ACCEPTED va 99 duplicate classifications.
-- Concurrent missing-row write tao mot logical state/history effect thay vi history bi nhan doi.
-- Version moi hon duoc giu; version cu hon khong the lam state lui.
-- Payload khac nhau cung version duoc bao la conflict va khong am tham ghi de.
-- Worker concurrency 8 van chi tao mot logical effect cho mot logical change.
+- 100 first write giống nhau tạo một business effect ACCEPTED và 99 duplicate classifications.
+- Concurrent missing-row write tạo một logical state/history effect thay vì history bị nhân đôi.
+- Version mới hơn được giữ; version cũ hơn không thể làm state lùi.
+- Payload khác nhau cùng version được báo là conflict và không âm thầm ghi đè.
+- Worker concurrency 8 vẫn chỉ tạo một logical effect cho một logical change.
 
-HTTP response trong cac test nay the hien ingress acceptance. Assertion de chung minh correctness la PostgreSQL state, history, outbox da commit va unique constraint.
+HTTP response trong các test này thể hiện ingress acceptance. Assertion để chứng minh correctness là PostgreSQL state, history, outbox đã commit và unique constraint.
 
 ## 13. Failure scenarios
 
-Cac check nay danh cho local environment co the xoa.
+Các check này dành cho local environment có thể xóa.
 
-### Redis khong san sang
+### Redis không sẵn sàng
 
 ~~~bash
 docker compose stop redis
@@ -419,9 +419,9 @@ curl -i -X POST http://localhost:3000/webhooks/inventory \
 docker compose start redis
 ~~~
 
-Health phai la 503 va webhook hop le phai tra 503 sau bounded enqueue retry. Khoi phuc Redis truoc khi tiep tuc.
+Health phải là 503 và webhook hợp lệ phải trả 503 sau bounded enqueue retry. Khôi phục Redis trước khi tiếp tục.
 
-### PostgreSQL khong san sang
+### PostgreSQL không sẵn sàng
 
 ~~~bash
 docker compose stop postgres
@@ -429,29 +429,29 @@ curl -i http://localhost:3000/health
 docker compose start postgres
 ~~~
 
-Health phai la 503. Cho database health check va application reconnect truoc khi retry API. PostgreSQL la correctness boundary, vi vay service khong xem Redis acceptance la thay the cho database commit.
+Health phải là 503. Cho database health check và application reconnect trước khi retry API. PostgreSQL là correctness boundary, vì vậy service không xem Redis acceptance là thay thế cho database commit.
 
-### Restart worker khi co queued work
+### Restart worker khi có queued work
 
-Gui vai webhook hop le, sau do restart chi worker:
+Gửi vai webhook hợp lệ, sau đó restart chỉ worker:
 
 ~~~bash
 docker compose restart worker
 ~~~
 
-Redis giu queued work trong luc worker restart. Sau khi worker tro lai, query database va xac nhan moi logical change co dung mot business effect. Day la minh chung cho retry/restart handling; khong phai tuyen bo exactly-once delivery.
+Redis giữ queued work trong lúc worker restart. Sau khi worker trở lại, query database và xác nhận mỗi logical change có đúng một business effect. Đây là minh chứng cho retry/restart handling; không phải tuyên bố exactly-once delivery.
 
 ## 14. Local k6 spike proof
 
-Lenh uu tien la repository wrapper:
+Lệnh ưu tiên là repository wrapper:
 
 ~~~bash
 pnpm load:spike
 ~~~
 
-Lenh nay can API, worker, PostgreSQL, Redis healthy va k6 da cai. Wrapper tu choi chay chung voi change-queue backlog san co, enqueue baseline version 2 co namespace, chay webhook duplicate-heavy va stale, sample queue counts, cho queue drain, sau do verify database invariants. Report duoc ghi vao load-tests/results/.
+Lệnh này cần API, worker, PostgreSQL, Redis healthy và k6 đã cài. Wrapper từ chối chạy chung với change-queue backlog sẵn có, enqueue baseline version 2 có namespace, chạy webhook duplicate-heavy và stale, sample queue counts, chờ queue drain, sau đó verify database invariants. Report được ghi vào `load-tests/results/`.
 
-Cac override huu ich:
+Các override huu ich:
 
 ~~~bash
 BASE_URL=http://localhost:3000 \
@@ -462,7 +462,7 @@ CHANGE_WORKER_CONCURRENCY=10 \
 pnpm load:spike
 ~~~
 
-Direct k6 script bat buoc co ca BASE_URL va LOAD_RUN_ID; khong chay voi default rong:
+Direct k6 script bắt buộc có cả BASE_URL và LOAD_RUN_ID; không chạy với default rỗng:
 
 ~~~bash
 BASE_URL=http://localhost:3000 \
@@ -473,7 +473,7 @@ SPIKE_VUS=10 \
 k6 run --summary-export load-tests/results/manual-review.k6-summary.json load-tests/spike.js
 ~~~
 
-Kiem tra script ma khong gui traffic:
+Kiểm trả script mà không gửi traffic:
 
 ~~~bash
 k6 inspect \
@@ -484,21 +484,21 @@ k6 inspect \
   load-tests/spike.js
 ~~~
 
-Spike do HTTP-to-BullMQ acceptance latency. No khong phai end-to-end business-processing latency, SLA, hoac chung nhan capacity production. Local evidence duoc luu cho prototype nay ghi nhan 100 unique changes, duplicate factor 20, 100 VUs, worker concurrency 10, queue da drain, 100 state/history/outbox rows, khong co duplicate pair, khong co stale regression va proof report pass. Chi xem cac con so nay la developer-machine evidence.
+Spike đo HTTP-to-BullMQ acceptance latency. Nó không phải end-to-end business-processing latency, SLA, hoặc chứng nhận capacity production. Local evidence được lưu cho prototype này ghi nhận 100 unique changes, duplicate factor 20, 100 VUs, worker concurrency 10, queue đã drain, 100 state/history/outbox rows, không có duplicate pair, không có stale regression và proof report pass. Chỉ xem các con số này là developer-machine evidence.
 
-Report duoc luu la load-tests/results/run-1788887228601-1abb3b45.json. Cac gia tri chinh:
+Report được lưu là load-tests/results/run-1788887228601-1abb3b45.json. Các giá trị chính:
 
-| Kiem tra | Ket qua local |
+| Kiểm trả | Kết quả local |
 | --- | ---: |
 | Baseline accepted | 100 |
 | k6 webhook attempts | 4,000 |
-| Tong attempts gom baseline | 4,100 |
+| Tổng attempts gồm baseline | 4,100 |
 | Duplicate deliveries | 2,000 |
 | Stale deliveries | 2,000 |
-| HTTP requests duoc chap nhan | 4,000 |
+| HTTP requests được chấp nhận | 4,000 |
 | Maximum waiting jobs | 261 |
 | Maximum active jobs | 10 |
-| Queue da drain | true |
+| Queue đã drain | true |
 | p50 / p95 / p99 ingress latency | 15.9505 / 59.32085 / 473.94659 ms |
 | PostgreSQL state / history / outbox rows | 100 / 100 / 100 |
 | Duplicate pairs / stale regressions | 0 / 0 |
@@ -506,40 +506,40 @@ Report duoc luu la load-tests/results/run-1788887228601-1abb3b45.json. Cac gia t
 
 ## 15. Checklist cho reviewer
 
-- [ ] GET /health tra HTTP 200 voi PostgreSQL va Redis up.
-- [ ] Inventory create, read va patch hoat dong; patch lam tang version.
-- [ ] Polling tao history source POLLING sau configured interval.
-- [ ] Webhook hop le tra 202; validation khong hop le tra 400.
-- [ ] Duplicate, stale va same-version conflict khong lam hong state.
-- [ ] XLSX upload dung field file va exact seven-column header.
-- [ ] Import status counters va SSE terminal events quan sat duoc.
-- [ ] Malformed row duoc dem la failed; malformed workbook failed o cap file.
-- [ ] PostgreSQL co mot business effect cho moi logical product/version va outbox event tuong ung.
-- [ ] Redis, PostgreSQL va worker restart scenario recover dung nhu tai lieu.
-- [ ] Focused test, full test, lint, typecheck, build va git diff --check pass.
-- [ ] Neu chay k6 wrapper, report cho thay queue da drain va database proof pass.
+- [ ] GET /health trả HTTP 200 với PostgreSQL và Redis up.
+- [ ] Inventory create, read và patch hoạt động; patch làm tăng version.
+- [ ] Polling tạo history source POLLING sau configured interval.
+- [ ] Webhook hợp lệ trả 202; validation không hợp lệ trả 400.
+- [ ] Duplicate, stale và same-version conflict không làm hỏng state.
+- [ ] XLSX upload dùng field file và exact seven-column header.
+- [ ] Import status counters và SSE terminal events quan sát được.
+- [ ] Malformed row được dem là failed; malformed workbook failed ở cấp file.
+- [ ] PostgreSQL có một business effect cho mỗi logical product/version và outbox event tương ứng.
+- [ ] Redis, PostgreSQL và worker restart scenario recover dùng như tài liệu.
+- [ ] Focused test, full test, lint, typecheck, build và git diff --check pass.
+- [ ] Nếu chạy k6 wrapper, report cho thấy queue đã drain và database proof pass.
 
-## 16. Cleanup va troubleshooting
+## 16. Cleanup và troubleshooting
 
-Dung Compose ma khong xoa local database volume:
+Dùng Compose mà không xóa local database volume:
 
 ~~~bash
 docker compose down
 ~~~
 
-De xoa ca PostgreSQL va Redis volume disposable:
+Để xóa cả PostgreSQL và Redis volume disposable:
 
 ~~~bash
 docker compose down -v
 ~~~
 
-Cac check thuong gap:
+Các check thường gặp:
 
-- Port 3000, 5432 hoac 6379 da duoc dung: dung process trung port hoac dat host port tuong ung truoc khi start Compose.
-- API start nhung request loi: chay curl -i http://localhost:3000/health, xem docker compose logs cdms worker va xac nhan migration da chay.
-- Import van o PROCESSING: xem worker logs, Redis health, GET /imports/<id> va cac row trong import_batch_accounting.
-- Polling co ve khong chay: cho lau hon POLL_INTERVAL_MS, xac nhan API process dang chay va query polling_checkpoints.
-- k6 precheck tu choi chay: drain queue khong lien quan, xac nhan worker dang chay va kiem tra k6 version.
-- Database chua co state moi sau HTTP 202: cho worker process; 202 la enqueue acceptance, khong phai transaction da hoan tat.
+- Port 3000, 5432 hoặc 6379 đã được dùng: dùng process trên port khác hoặc đặt host port tương ứng trước khi start Compose.
+- API start nhưng request lỗi: chạy `curl -i http://localhost:3000/health`, xem `docker compose logs cdms worker` và xác nhận migration đã chạy.
+- Import vẫn ở PROCESSING: xem worker logs, Redis health, `GET /imports/<id>` và các row trong `import_batch_accounting`.
+- Polling có vẻ không chạy: chờ lâu hơn `POLL_INTERVAL_MS`, xác nhận API process đang chạy và query `polling_checkpoints`.
+- k6 precheck từ chối chạy: drain queue không liên quan, xác nhận worker đang chạy và kiểm tra k6 version.
+- Database chưa có state mới sau HTTP 202: chờ worker process; 202 là enqueue acceptance, không phải transaction đã hoàn tất.
 
-Xem them [architecture](architecture.md), [failure handling](failure-handling.md), [Excel streaming](excel-streaming.md), [SSE progress](sse-progress.md) va [testing](testing.md) de doc ly do kien truc va failure boundary.
+Xem thêm [architecture](architecture.md), [failure handling](failure-handling.md), [Excel streaming](excel-streaming.md), [SSE progress](sse-progress.md) và [testing](testing.md) để đọc lý do kiến trúc và failure boundary.

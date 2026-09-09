@@ -1,20 +1,20 @@
-# Redis va BullMQ Failure Model
+# Redis và BullMQ Failure Model
 
-BullMQ cung cap buffering, retry/backoff va bounded worker concurrency. BullMQ khong phai correctness mechanism. PostgreSQL transaction, advisory lock, constraint va ChangeProcessor decision table moi cung cap business correctness.
+BullMQ cùng cấp buffering, retry/backoff và bounded worker concurrency. BullMQ không phải correctness mechanism. PostgreSQL transaction, advisory lock, constraint và ChangeProcessor decision table đều cùng cấp business correctness.
 
 ## Acceptance boundaries
 
-- Webhook: chi tra `202 Accepted` sau khi BullMQ chap nhan job. Redis failure truoc enqueue tra `503` retriable.
-- Polling: cursor page chi advance sau khi ca page accepted. Failure giu cursor truoc do.
-- Excel: moi batch enqueue retry trong `IMPORT_REDIS_RETRY_TIMEOUT_MS` (default 30000 ms). Het timeout thi ingestion `FAILED`.
+- Webhook: chỉ trả `202 Accepted` sau khi BullMQ chấp nhận job. Redis failure trước enqueue trả `503` retriable.
+- Polling: cursor page chỉ advance sau khi cả page accepted. Failure giữ cursor trước đó.
+- Excel: mỗi batch enqueue retry trong `IMPORT_REDIS_RETRY_TIMEOUT_MS` (default 30000 ms). Hết timeout thì ingestion `FAILED`.
 
-Neu Redis fail sau khi accepted, worker reconnect/retry theo BullMQ. Process restart khong bien database effect thanh duplicate vi PostgreSQL bao ve processing.
+Nếu Redis fail sau khi accepted, worker reconnect/retry theo BullMQ. Process restart không biến database effect thành duplicate vì PostgreSQL bảo vệ processing.
 
-Change queue, import-batch queue va downstream queue dung cung repository va worker process rieng. Change worker concurrency dung `CHANGE_WORKER_CONCURRENCY` (default 10). Queue backlog la throughput signal, khong phai correctness proof.
+Change queue, import-batch queue và downstream queue dùng cùng repository và worker process riêng. Change worker concurrency dùng `CHANGE_WORKER_CONCURRENCY` (default 10). Queue backlog là throughput signal, không phải correctness proof.
 
-## Gioi han ben vung
+## Giới hạn bền vững
 
-HTTP response sau enqueue acknowledge Redis/BullMQ ownership, khong phai PostgreSQL persistence. Mat Redis nghiem trong sau do co the lam mat job chua toi PostgreSQL. Prototype co y khong them Inbox Pattern hay broker khac.
+HTTP response sau enqueue acknowledge Redis/BullMQ ownership, không phải PostgreSQL persistence. Mất Redis nghiêm trọng sau đó có thể làm mất job chưa tới PostgreSQL. Prototype cố ý không thêm Inbox Pattern hay broker khác.
 
 ## Tham khao
 

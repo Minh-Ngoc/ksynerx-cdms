@@ -1,20 +1,20 @@
-# ADR-002: PostgreSQL Schema va TypeORM Migrations
+# ADR-002: PostgreSQL Schema và TypeORM Migrations
 
 ## Status
 Accepted
 
 ## Context
 
-Business correctness, import lifecycle ben vung va inventory emulator can relational constraint va schema evolution ro rang.
+Business correctness, import lifecycle bền vững và inventory emulator cần relational constraint và schema evolution rõ ràng.
 
 ## Decision
 
-Dung PostgreSQL voi TypeORM entities va migrations. Tat `synchronize`. Database enforce unique va progress invariants.
+Dùng PostgreSQL với TypeORM entities và migrations. Tắt `synchronize`. Database enforce unique và progress invariants.
 
 ## Consequences
 
-Environment moi can chay migration, nhung constraint van la authority khi worker race hoac retry.
+Mỗi environment cần chạy migration, nhưng constraint vẫn là authority khi worker race hoặc retry.
 
 ## Alternatives Considered
 
-Runtime synchronization va correctness store khong phai relational bi reject.
+Runtime synchronization và correctness store không phải relational bị reject.

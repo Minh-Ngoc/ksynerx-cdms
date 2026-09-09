@@ -350,31 +350,36 @@ flowchart LR
 
 ~~~mermaid
 flowchart TD
-    Input[Normalized ProductChangeInput] --> Begin[BEGIN PostgreSQL transaction]
-    Begin --> Lock[pg_advisory_xact_lock(productId)]
-    Lock --> Fingerprint[Compute canonical fingerprint]
-    Fingerprint --> Read[Read product_state]
-    Read --> Current{Current state?}
+    Input["Normalized ProductChangeInput"] --> Begin["BEGIN PostgreSQL transaction"]
+    Begin --> Lock["pg_advisory_xact_lock(productId)"]
+    Lock --> Fingerprint["Compute canonical fingerprint"]
+    Fingerprint --> Read["Read product_state"]
+    Read --> Current{"Current state?"}
 
-    Current -->|none| Accept[ACCEPTED]
-    Current -->|exists| Version{Incoming version compared with current}
+    Current -->|none| Accept["ACCEPTED"]
+    Current -->|exists| Version{"Incoming version compared with current"}
 
-    Version -->|incoming < current| Stale[STALE]
-    Version -->|incoming > current| Accept
-    Version -->|same version| SameFingerprint{Fingerprint same?}
-    SameFingerprint -->|yes| Duplicate[DUPLICATE]
-    SameFingerprint -->|no| Conflict[VERSION_CONFLICT]
+    Version -->|"incoming < current"| Stale["STALE"]
+    Version -->|"incoming > current"| Accept
+    Version -->|"same version"| SameFingerprint{"Fingerprint same?"}
 
-    Accept --> History[Insert product_changes]
-    History --> State[Upsert product_state]
-    State --> Outbox[Insert outbox_events]
-    Outbox --> Commit[COMMIT]
-    Stale --> Finish[Finish without business-state writes]
+    SameFingerprint -->|yes| Duplicate["DUPLICATE"]
+    SameFingerprint -->|no| Conflict["VERSION_CONFLICT"]
+
+    Accept --> History["Insert product_changes"]
+    History --> State["Upsert product_state"]
+    State --> Outbox["Insert outbox_events"]
+    Outbox --> Commit["COMMIT"]
+
+    Stale --> Finish["Finish without business-state writes"]
     Duplicate --> Finish
     Conflict --> Finish
-    Commit --> Result[Return ACCEPTED]
-    Finish --> Result2[Return semantic result]
-    Defensive[UNIQUE product_changes(product_id, version)] -. defensive invariant .-> History
+
+    Commit --> Result["Return ACCEPTED"]
+    Finish --> Result2["Return semantic result"]
+
+    Defensive["UNIQUE product_changes(product_id, version)"]
+        -. "defensive invariant" .-> History
 ~~~
 
 **What this shows:** Every `ChangeProcessor.process` call opens a transaction, acquires a transaction-scoped advisory lock, computes the canonical fingerprint, reads current state, and chooses one semantic result.

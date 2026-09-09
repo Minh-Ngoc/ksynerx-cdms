@@ -1,19 +1,19 @@
-# Cac workflow CDMS
+# Các workflow CDMS
 
-Tai lieu nay giai thich CDMS prototype da hoan thien theo tung muc do, tu system context den cac workflow ingestion, correctness, retry, import, outbox, SSE va review chi tiet. Day la tai lieu truc quan bo sung cho architecture, failure handling, Excel streaming, transactional outbox, SSE, testing va usage guide.
+Tài liệu này giải thích CDMS prototype đã hoàn thiện theo từng mức độ, từ system context đến các workflow ingestion, correctness, retry, import, outbox, SSE và review chi tiết. Đây là tài liệu trực quan bổ sung cho architecture, failure handling, Excel streaming, transactional outbox, SSE, testing và usage guide.
 
-He thong dam bao exactly-once effect o PostgreSQL/business level. Redis/BullMQ cung cap buffering, retry va concurrency co gioi han; khong dam bao exactly-once delivery.
+Hệ thống đảm bảo exactly-once effect ở PostgreSQL/business level. Redis/BullMQ cùng cấp buffering, retry và concurrency có giới hạn; không đảm bảo exactly-once delivery.
 
-## Dinh huong theo muc do
+## Định hướng theo mức độ
 
-| Level | Diagram | Muc dich |
+| Level | Diagram | Mục đích |
 | --- | --- | --- |
-| L1 | System Context | He thong gom nhung thanh phan nao? |
-| L2 | Deployment Topology | Process va container nao dang chay? |
-| L3 | Application Layers | Module nao so huu trach nhiem nao? |
-| L4 | Unified Ingestion | Polling, webhook va Excel hoi tu ra sao? |
-| L5 | Correctness va Concurrency | Exactly-once effect duoc enforce nhu the nao? |
-| L6 | Detailed Workflows | Import, progress, SSE, outbox, health va failure chay ra sao? |
+| L1 | System Context | Hệ thống gồm những thành phần nào? |
+| L2 | Deployment Topology | Process và container nào đang chạy? |
+| L3 | Application Layers | Module nào sở hữu trách nhiệm nào? |
+| L4 | Unified Ingestion | Polling, webhook và Excel hội tụ ra sao? |
+| L5 | Correctness và Concurrency | Exactly-once effect được enforce như thế nào? |
+| L6 | Detailed Workflows | Import, progress, SSE, outbox, health và failure chạy ra sao? |
 
 ## 1. System Context
 
@@ -33,15 +33,15 @@ flowchart LR
     CDMS --> Redis
 ~~~
 
-**Diagram nay the hien:** Du lieu inventory ben ngoai hoac duoc emulated vao he thong qua scheduled polling, webhook hoac Excel upload. CDMS dung PostgreSQL cho business correctness ben vung va Redis/BullMQ cho asynchronous buffering.
+**Diagram này thể hiện:** Dữ liệu inventory bên ngoài hoặc được emulated vào hệ thống qua scheduled polling, webhook hoặc Excel upload. CDMS dùng PostgreSQL cho business correctness bền vững và Redis/BullMQ cho asynchronous buffering.
 
-**Invariant quan trong:** Ca ba co che ingress cuoi cung deu dung cung normalized change-processing path va PostgreSQL correctness path.
+**Invariant quan trọng:** Cả ba cơ chế ingress cuối cùng đều dùng cùng normalized change-processing path và PostgreSQL correctness path.
 
-**Failure behavior:** Neu Redis khong nhan ingress job, API khong duoc tuyen bo asynchronous acceptance. PostgreSQL van la source of truth.
+**Failure behavior:** Nếu Redis không nhận ingress job, API không được tuyên bố asynchronous acceptance. PostgreSQL vẫn là source of truth.
 
-**Ly do thiet ke:** Prototype can minh hoa nhieu co che ingestion ma khong tao nhieu business-processing implementation rieng.
+**Lý do thiết kế:** Prototype cần minh họa nhiều cơ chế ingestion mà không tạo nhiều business-processing implementation riêng.
 
-**Implementation lien quan:** `src/app.module.ts`, `src/modules/ingestion/`, `src/modules/imports/`, `src/modules/queue/`, `src/database/`.
+**Implementation liên quan:** `src/app.module.ts`, `src/modules/ingestion/`, `src/modules/imports/`, `src/modules/queue/`, `src/database/`.
 
 ## 2. Deployment / Runtime Topology
 
@@ -61,15 +61,15 @@ flowchart LR
     Image -.-> Worker
 ~~~
 
-**Diagram nay the hien:** Docker Compose chay `cdms`, `worker`, `postgres` va `redis`. API va worker dung cung built image nhung command khac nhau: `node dist/main.js` va `node dist/worker.js`.
+**Diagram này thể hiện:** Docker Compose chạy `cdms`, `worker`, `postgres` và `redis`. API và worker dùng cùng built image nhưng command khác nhau: `node dist/main.js` và `node dist/worker.js`.
 
-**Invariant quan trong:** Repository van la mot NestJS source project. Worker la runtime role rieng, khong phai source split thanh microservice.
+**Invariant quan trọng:** Repository vẫn là một NestJS source project. Worker là runtime role riêng, không phải source split thành microservice.
 
-**Failure behavior:** Compose doi PostgreSQL va Redis health check truoc khi khoi dong API va worker. Worker restart khong dong nghia exactly-once delivery; replay van an toan vi PostgreSQL quyet dinh business effect.
+**Failure behavior:** Compose đợi PostgreSQL và Redis health check trước khi khởi động API và worker. Worker restart không đồng nghĩa exactly-once delivery; replay vẫn an toàn vì PostgreSQL quyết định business effect.
 
-**Ly do thiet ke:** Tach process role giup HTTP/polling/upload khong bi lan voi asynchronous consumer trong khi van giu mot codebase va mot image.
+**Lý do thiết kế:** Tách process role giúp HTTP/polling/upload không bị lẫn với asynchronous consumer trong khi vẫn giữ một codebase và một image.
 
-**Implementation lien quan:** `docker-compose.yml`, `src/app.module.ts`, `src/worker.module.ts`, `src/main.ts`, `src/worker.ts`, `src/worker.bootstrap.ts`.
+**Implementation liên quan:** `docker-compose.yml`, `src/app.module.ts`, `src/worker.module.ts`, `src/main.ts`, `src/worker.ts`, `src/worker.bootstrap.ts`.
 
 ## 3. Application Layers
 
@@ -142,15 +142,15 @@ flowchart TB
     Docker --> Redis
 ~~~
 
-**Diagram nay the hien:** HTTP controller va SSE endpoint dieu phoi application service. Queue producer giao work cho BullMQ processor, sau do processor goi domain normalization hoac `ChangeProcessor`. Cac table co PostgreSQL lam persistence cho state va accounting.
+**Diagram này thể hiện:** HTTP controller và SSE endpoint điều phối application service. Queue producer giao work cho BullMQ processor, sau đó processor gọi domain normalization hoặc `ChangeProcessor`. Các table có PostgreSQL làm persistence cho state và accounting.
 
-**Invariant quan trong:** Queue layer khong thay the business layer. `ChangeProcessor` va PostgreSQL quyet dinh accepted, duplicate, stale va version-conflict.
+**Invariant quan trọng:** Queue layer không thay thế business layer. `ChangeProcessor` và PostgreSQL quyết định accepted, duplicate, stale và version-conflict.
 
-**Failure behavior:** Redis failure anh huong enqueue hoac live progress delivery, trong khi PostgreSQL state da commit van la authoritative.
+**Failure behavior:** Redis failure ảnh hưởng enqueue hoặc live progress delivery, trong khi PostgreSQL state đã commit vẫn là authoritative.
 
-**Ly do thiet ke:** Feature module giu ro ranh gioi giua ingress, async work, correctness, persistence va infrastructure.
+**Lý do thiết kế:** Feature module giữ rõ ranh giới giữa ingress, async work, correctness, persistence và infrastructure.
 
-**Implementation lien quan:** `src/app.module.ts`, `src/worker.module.ts`, `src/modules/changes/`, `src/modules/queue/`, `src/modules/imports/`, `src/modules/outbox/`.
+**Implementation liên quan:** `src/app.module.ts`, `src/worker.module.ts`, `src/modules/changes/`, `src/modules/queue/`, `src/modules/imports/`, `src/modules/outbox/`.
 
 ## 4. Unified Ingestion Architecture
 
@@ -174,15 +174,15 @@ flowchart LR
     Processor --> Transaction[(PostgreSQL transaction)]
 ~~~
 
-**Diagram nay the hien:** Polling va webhook normalize truc tiep vao `ProductChangeInput` va change queue. Excel row duoc normalize ve cung change contract ben trong import-batch worker truoc khi goi `ChangeProcessor`.
+**Diagram này thể hiện:** Polling và webhook normalize trực tiếp vào `ProductChangeInput` và change queue. Excel row được normalize về cùng change contract bên trong import-batch worker trước khi gọi `ChangeProcessor`.
 
-**Invariant quan trong:** Chi co mot business-processing path chung du cac ingress queue khac nhau.
+**Invariant quan trọng:** Chỉ có một business-processing path chung cho các ingress queue khác nhau.
 
-**Failure behavior:** Queue job da chap nhan co the bi retry hoac giao lai. Semantic result do PostgreSQL quyet dinh, khong phai BullMQ job deduplication.
+**Failure behavior:** Queue job đã chấp nhận có thể bị retry hoặc giao lại. Semantic result do PostgreSQL quyết định, không phải BullMQ job deduplication.
 
-**Ly do thiet ke:** Common contract ngan business rule theo tung source bi lech nhau.
+**Lý do thiết kế:** Common contract ngăn business rule theo từng source bị lệch nhau.
 
-**Implementation lien quan:** `src/modules/changes/product-change-contract.ts`, `src/modules/ingestion/polling-normalizer.ts`, `src/modules/ingestion/webhook-normalizer.ts`, `src/modules/imports/excel-row-normalizer.ts`.
+**Implementation liên quan:** `src/modules/changes/product-change-contract.ts`, `src/modules/ingestion/polling-normalizer.ts`, `src/modules/ingestion/webhook-normalizer.ts`, `src/modules/imports/excel-row-normalizer.ts`.
 
 ## 5. Webhook Workflow
 
@@ -223,15 +223,15 @@ sequenceDiagram
     Worker-->>Redis: Complete job
 ~~~
 
-**Diagram nay the hien:** Validation va normalization xay ra truoc `queue.add`. API tra `202` chi sau khi Redis chap nhan job. Worker sau do goi `ChangeProcessor`.
+**Diagram này thể hiện:** Validation và normalization xảy ra trước `queue.add`. API trả `202` chỉ sau khi Redis chấp nhận job. Worker sau đó gọi `ChangeProcessor`.
 
-**Invariant quan trong:** HTTP acceptance la asynchronous enqueue acceptance, khong phai business transaction da hoan tat.
+**Invariant quan trọng:** HTTP acceptance là asynchronous enqueue acceptance, không phải business transaction đã hoàn tất.
 
-**Failure behavior:** Redis enqueue error tro thanh `503` co the retry, vi vay API khong phat ra `202` gia. Duplicate, stale va conflict ve sau la worker outcome hop le.
+**Failure behavior:** Redis enqueue error trở thành `503` có thể retry, vì vậy API không phát ra `202` giả. Duplicate, stale và conflict về sau là worker outcome hợp lệ.
 
-**Ly do thiet ke:** API van responsive trong khi database correctness boundary nam trong worker transaction.
+**Lý do thiết kế:** API vẫn responsive trong khi database correctness boundary nằm trong worker transaction.
 
-**Implementation lien quan:** `src/modules/ingestion/webhook.controller.ts`, `src/modules/ingestion/webhook-ingestion.service.ts`, `src/modules/ingestion/webhook-normalizer.ts`, `src/modules/queue/change-queue.producer.ts`, `src/modules/queue/processors/change-queue.processor.ts`.
+**Implementation liên quan:** `src/modules/ingestion/webhook.controller.ts`, `src/modules/ingestion/webhook-ingestion.service.ts`, `src/modules/ingestion/webhook-normalizer.ts`, `src/modules/queue/change-queue.producer.ts`, `src/modules/queue/processors/change-queue.processor.ts`.
 
 ## 6. Polling Workflow
 
@@ -270,15 +270,15 @@ sequenceDiagram
     end
 ~~~
 
-**Diagram nay the hien:** Scheduler doc checkpoint, query inventory bang `(updatedAt, productId)`, enqueue tung row theo thu tu va chi ghi checkpoint sau khi ca page da duoc chap nhan.
+**Diagram này thể hiện:** Scheduler đọc checkpoint, query inventory bằng `(updatedAt, productId)`, enqueue từng row theo thứ tự và chỉ ghi checkpoint sau khi cả page đã được chấp nhận.
 
-**Invariant quan trong:** Checkpoint khong bao gio advance qua mot page co queue acceptance chua hoan tat.
+**Invariant quan trọng:** Checkpoint không bao giờ advance qua một page có queue acceptance chưa hoàn tất.
 
-**Failure behavior:** Enqueue failure giu checkpoint cu, vi vay poll tiep theo co the doc lai page. Duplicate do doc lai an toan o downstream; checkpoint write failure cung co the de lai job da enqueue de replay.
+**Failure behavior:** Enqueue failure giữ checkpoint cũ, vì vậy poll tiếp theo có thể đọc lại page. Duplicate do đọc lại an toàn ở downstream; checkpoint write failure cũng có thể để lại job đã enqueue để replay.
 
-**Ly do thiet ke:** Composite cursor tao thu tu on dinh khi timestamp bang nhau, con PostgreSQL correctness lam cho replay an toan.
+**Lý do thiết kế:** Composite cursor tạo thứ tự ổn định khi timestamp bằng nhau, còn PostgreSQL correctness làm cho replay an toàn.
 
-**Implementation lien quan:** `src/modules/ingestion/polling/polling.scheduler.ts`, `src/modules/ingestion/polling/polling.service.ts`, `src/modules/ingestion/polling/polling-checkpoint.repository.ts`, `src/modules/inventory/inventory.service.ts`.
+**Implementation liên quan:** `src/modules/ingestion/polling/polling.scheduler.ts`, `src/modules/ingestion/polling/polling.service.ts`, `src/modules/ingestion/polling/polling-checkpoint.repository.ts`, `src/modules/inventory/inventory.service.ts`.
 
 ## 7. Excel Import Workflow
 
@@ -306,15 +306,15 @@ flowchart TD
     Processing -->|terminal producer/worker failure| Failed
 ~~~
 
-**Diagram nay the hien:** Upload dau tien duoc streaming vao temporary file co kiem soat. XLSX staged duoc doc bang ZIP/XML stream, row duoc normalize va batch, sau do batch vao BullMQ truoc khi import worker ap dung tung row.
+**Diagram này thể hiện:** Upload đầu tiên được streaming vào temporary file có kiểm soát. XLSX staged được đọc bằng ZIP/XML stream, row được normalize và batch, sau đó batch vào BullMQ trước khi import worker áp dụng từng row.
 
-**Invariant quan trong:** Toan bo upload va workbook khong duoc buffer thanh mot object trong memory. `total_rows` va `enqueue_completed_at` mo ta producer completion; worker accounting so huu terminal completion.
+**Invariant quan trọng:** Toàn bộ upload và workbook không được buffer thành một object trong memory. `total_rows` và `enqueue_completed_at` mô tả producer completion; worker accounting sở hữu terminal completion.
 
-**Failure behavior:** Upload size, parser/header va bounded Redis enqueue failure danh dau import `FAILED`. Batch da queue khong duoc rollback bang distributed transaction.
+**Failure behavior:** Upload size, parser/header và bounded Redis enqueue failure đánh dấu import `FAILED`. Batch đã queue không được rollback bằng distributed transaction.
 
-**Ly do thiet ke:** Disk staging lam XLSX seekable cho ZIP metadata, trong khi row stream va queue writer giu bounded backpressure.
+**Lý do thiết kế:** Disk staging làm XLSX seekable cho ZIP metadata, trong khi row stream và queue writer giữ bounded backpressure.
 
-**Implementation lien quan:** `src/modules/imports/import-upload.service.ts`, `src/modules/imports/import-streaming.service.ts`, `src/modules/imports/internal-xlsx-streaming-reader.ts`, `src/modules/imports/excel-row-normalizer.ts`.
+**Implementation liên quan:** `src/modules/imports/import-upload.service.ts`, `src/modules/imports/import-streaming.service.ts`, `src/modules/imports/internal-xlsx-streaming-reader.ts`, `src/modules/imports/excel-row-normalizer.ts`.
 
 ## 8. Excel Backpressure
 
@@ -336,15 +336,15 @@ flowchart LR
     SAX -.->|ZIP read slows| Zip
 ~~~
 
-**Diagram nay the hien:** `ImportBatchWritable` cho tung batch enqueue xong. Unresolved write callback day backpressure nguoc qua transform, SAX parser va ZIP stream.
+**Diagram này thể hiện:** `ImportBatchWritable` chờ từng batch enqueue xong. Unresolved write callback đẩy backpressure ngược qua transform, SAX parser và ZIP stream.
 
-**Invariant quan trong:** Khong co all-rows array va khong co promise queue vo han truoc Redis. Pending-batch bound va mot unresolved writable operation giu pipeline co gioi han.
+**Invariant quan trọng:** Không có all-rows array và không có promise queue vô hạn trước Redis. Pending-batch bound và một unresolved writable operation giữ pipeline có giới hạn.
 
-**Failure behavior:** Redis retry bi gioi han boi `IMPORT_REDIS_RETRY_TIMEOUT_MS`. Khi timeout, stream fail va import bi danh dau `FAILED`; batch da chap nhan van co the con trong queue.
+**Failure behavior:** Redis retry bị giới hạn bởi `IMPORT_REDIS_RETRY_TIMEOUT_MS`. Khi timeout, stream fail và import bị đánh dấu `FAILED`; batch đã chấp nhận vẫn có thể còn trong queue.
 
-**Ly do thiet ke:** Backpressure duoc truyen bang Node stream thay vi progress gia hoac memory buffering. Shared strings van co the dung memory ty le voi shared-string table.
+**Lý do thiết kế:** Backpressure được truyền bằng Node stream thay vì progress giả hoặc memory buffering. Shared strings vẫn có thể dùng memory tỷ lệ với shared-string table.
 
-**Implementation lien quan:** `src/modules/imports/import-streaming.service.ts`, dac biet `ImportBatchWritable`, `ImportBatchTransform` va `UploadByteLimitTransform`; `src/modules/imports/internal-xlsx-streaming-reader.ts`.
+**Implementation liên quan:** `src/modules/imports/import-streaming.service.ts`, đặc biệt `ImportBatchWritable`, `ImportBatchTransform` và `UploadByteLimitTransform`; `src/modules/imports/internal-xlsx-streaming-reader.ts`.
 
 ## 9. ChangeProcessor / Exactly-Once Workflow
 
@@ -377,17 +377,17 @@ flowchart TD
     Defensive[UNIQUE product_changes(product_id, version)] -. defensive invariant .-> History
 ~~~
 
-**Diagram nay the hien:** Moi lan `ChangeProcessor.process` mo transaction, lay transaction-scoped advisory lock, tinh canonical fingerprint, doc current state va chon semantic result.
+**Diagram này thể hiện:** Mỗi lần `ChangeProcessor.process` mở transaction, lấy transaction-scoped advisory lock, tính canonical fingerprint, đọc current state và chọn semantic result.
 
-**Invariant quan trong:** Voi `ACCEPTED`, history, latest state va outbox duoc commit cung nhau. `UNIQUE (product_id, version)` la defensive invariant; decision path thong thuong la lock ket hop state comparison.
+**Invariant quan trọng:** Với `ACCEPTED`, history, latest state và outbox được commit cùng nhau. `UNIQUE (product_id, version)` là defensive invariant; decision path thông thường là lock kết hợp state comparison.
 
-**Failure behavior:** `DUPLICATE`, `STALE` va `VERSION_CONFLICT` return ma khong ghi business state. Database error tren accepted path rollback transaction.
+**Failure behavior:** `DUPLICATE`, `STALE` và `VERSION_CONFLICT` return mà không ghi business state. Database error trên accepted path rollback transaction.
 
-**Ly do thiet ke:** Lock bao phu ca existing row va missing-row first-write race; canonical fingerprint phan biet replay giong het voi conflict cung version.
+**Lý do thiết kế:** Lock bao phủ cả existing row và missing-row first-write race; canonical fingerprint phân biệt replay giống hệt với conflict cùng version.
 
-**Implementation lien quan:** `src/modules/changes/change-processor.ts`, `src/modules/changes/product-lock.service.ts`, `src/modules/changes/product-canonicalization.ts`, `src/database/migrations/1760000000000-InitialCdmsSchema.ts`.
+**Implementation liên quan:** `src/modules/changes/change-processor.ts`, `src/modules/changes/product-lock.service.ts`, `src/modules/changes/product-canonicalization.ts`, `src/database/migrations/1760000000000-InitialCdmsSchema.ts`.
 
-### Bang quyet dinh version
+### Bảng quyết định version
 
 | Current | Incoming | Fingerprint | Result |
 | --- | --- | --- | --- |
@@ -419,15 +419,15 @@ sequenceDiagram
     B->>DB: COMMIT without business-state writes
 ~~~
 
-**Diagram nay the hien:** Hai worker process cung product se serialize tren cung PostgreSQL transaction advisory lock. Worker B chi doc sau khi Worker A commit.
+**Diagram này thể hiện:** Hai worker process cùng product sẽ serialize trên cùng PostgreSQL transaction advisory lock. Worker B chỉ đọc sau khi Worker A commit.
 
-**Invariant quan trong:** Lock duoc lay truoc khi doc `product_state`, vi vay product chua co state row cung duoc serialize.
+**Invariant quan trọng:** Lock được lấy trước khi đọc `product_state`, vì vậy product chưa có state row cũng được serialize.
 
-**Failure behavior:** Rollback release transaction lock. Job replay co the thu lai va resolve theo committed state.
+**Failure behavior:** Rollback giải phóng transaction lock. Job replay có thể được xử lý lại và resolve theo committed state.
 
-**Ly do thiet ke:** Cach nay ngan first-write race, duplicate history/state write va silent last-writer-wins version conflict. Product ID khac nhau tao advisory-lock key khac nhau va co the process dong thoi.
+**Lý do thiết kế:** Cách này ngăn first-write race, duplicate history/state write và silent last-writer-wins version conflict. Product ID khác nhau tạo advisory-lock key khác nhau và có thể process đồng thời.
 
-**Implementation lien quan:** `src/modules/changes/product-lock.service.ts`, `src/modules/changes/change-processor.ts`, `src/modules/queue/processors/change-queue.processor.ts`.
+**Implementation liên quan:** `src/modules/changes/product-lock.service.ts`, `src/modules/changes/change-processor.ts`, `src/modules/queue/processors/change-queue.processor.ts`.
 
 ## 11. Import Batch Worker Workflow
 
@@ -467,15 +467,15 @@ sequenceDiagram
     end
 ~~~
 
-**Diagram nay the hien:** Batch bi skip neu accounting marker da ton tai. Moi semantic `ChangeProcessor` result la row outcome da hoan tat va duoc tinh la succeeded cho import accounting; exception khong mong doi trigger whole-job retry cho den attempt cuoi.
+**Diagram này thể hiện:** Batch bị skip nếu accounting marker đã tồn tại. Mỗi semantic `ChangeProcessor` result là row outcome đã hoàn tất và được tính là succeeded cho import accounting; exception không mong đợi trigger whole-job retry cho đến attempt cuối.
 
-**Invariant quan trong:** Progress chi duoc count sau khi ca batch co terminal outcome. Malformed row duoc producer tinh som la readable, processed va failed.
+**Invariant quan trọng:** Progress chỉ được count sau khi cả batch có terminal outcome. Malformed row được producer tính sớm là readable, processed và failed.
 
-**Failure behavior:** Truoc BullMQ final attempt, exception throw ca batch ma khong account. O final attempt, row loi duoc log va processor tiep tuc cac row con lai.
+**Failure behavior:** Trước BullMQ final attempt, exception throw cả batch mà không account. Ở final attempt, row lỗi được log và processor tiếp tục các row còn lại.
 
-**Ly do thiet ke:** Retry ca batch van an toan cho business state vi `ChangeProcessor` chiu duoc replay; durable batch accounting ngan counter bi dem trung.
+**Lý do thiết kế:** Retry cả batch vẫn an toàn cho business state vì `ChangeProcessor` chịu được replay; durable batch accounting ngăn counter bị đếm trùng.
 
-**Implementation lien quan:** `src/modules/queue/processors/import-batch-queue.processor.ts`, `src/modules/imports/import-progress.service.ts`, `src/modules/imports/import-job.repository.ts`.
+**Implementation liên quan:** `src/modules/queue/processors/import-batch-queue.processor.ts`, `src/modules/imports/import-progress.service.ts`, `src/modules/imports/import-job.repository.ts`.
 
 ## 12. Import Progress Idempotency
 
@@ -494,15 +494,15 @@ flowchart TD
     Replay --> Marker
 ~~~
 
-**Diagram nay the hien:** `import_batch_accounting` duoc insert bang `ON CONFLICT DO NOTHING`. Chi transaction thang insert moi update counter va danh gia completion.
+**Diagram này thể hiện:** `import_batch_accounting` được insert bằng `ON CONFLICT DO NOTHING`. Chỉ transaction thắng insert mới update counter và đánh giá completion.
 
-**Invariant quan trong:** Marker, counter va completion decision commit trong cung transaction PostgreSQL. Cac equation `rowsProcessed = rowsSucceeded + rowsFailed` va `rowsProcessed <= rowsRead` van hop le.
+**Invariant quan trọng:** Marker, counter và completion decision commit trong cùng transaction PostgreSQL. Các equation `rowsProcessed = rowsSucceeded + rowsFailed` và `rowsProcessed <= rowsRead` vẫn hợp lệ.
 
-**Failure behavior:** Neu worker crash sau database commit nhung truoc BullMQ acknowledgement, replay thay marker va khong tang counter lan nua.
+**Failure behavior:** Nếu worker crash sau database commit nhưng trước BullMQ acknowledgement, replay thấy marker và không tăng counter lần nữa.
 
-**Ly do thiet ke:** Aggregate counter khong nhan ra duoc replay sau commit/truoc ack. Day la progress idempotency, khong phai PostgreSQL Inbox Pattern va khong phai exactly-once delivery.
+**Lý do thiết kế:** Aggregate counter không nhận ra được replay sau commit/trước ack. Đây là progress idempotency, không phải PostgreSQL Inbox Pattern và không phải exactly-once delivery.
 
-**Implementation lien quan:** `src/modules/imports/import-job.repository.ts`, `src/modules/imports/entities/import-batch-accounting.entity.ts`, `src/database/migrations/1760000000001-ImportBatchAccounting.ts`.
+**Implementation liên quan:** `src/modules/imports/import-job.repository.ts`, `src/modules/imports/entities/import-batch-accounting.entity.ts`, `src/database/migrations/1760000000001-ImportBatchAccounting.ts`.
 
 ## 13. Import Completion Workflow
 
@@ -519,15 +519,15 @@ flowchart TD
     Partial[COMPLETED can have rowsFailed > 0] --> Done
 ~~~
 
-**Diagram nay the hien:** Worker chi set `COMPLETED` khi import dang `PROCESSING`, producer da enqueue xong va moi readable row deu co terminal accounting.
+**Diagram này thể hiện:** Worker chỉ set `COMPLETED` khi import đang `PROCESSING`, producer đã enqueue xong và mỗi readable row đều có terminal accounting.
 
-**Invariant quan trong:** `FAILED` la terminal trong completion update va khong the resurrect thanh `COMPLETED`. Import completed van co the co `rowsFailed > 0` do malformed hoac terminally failed row.
+**Invariant quan trọng:** `FAILED` là terminal trong completion update và không thể resurrect thành `COMPLETED`. Import completed vẫn có thể có `rowsFailed > 0` do malformed hoặc terminally failed row.
 
-**Failure behavior:** Neu enqueue chua xong hoac con row chua process, job van o `PROCESSING`. Producer/parser/size/Redis-timeout failure danh dau `FAILED`.
+**Failure behavior:** Nếu enqueue chưa xong hoặc còn row chưa process, job vẫn ở `PROCESSING`. Producer/parser/size/Redis-timeout failure đánh dấu `FAILED`.
 
-**Ly do thiet ke:** Completion co nghia producer da xong va moi row co terminal outcome ben vung, khong co nghia moi row deu accepted ve business correctness.
+**Lý do thiết kế:** Completion có nghĩa producer đã xong và mỗi row có terminal outcome bền vững, không có nghĩa mỗi row đều accepted về business correctness.
 
-**Implementation lien quan:** `src/modules/imports/import-job.repository.ts`, `src/modules/imports/entities/import-job.entity.ts`, `src/modules/imports/import-progress-read.service.ts`.
+**Implementation liên quan:** `src/modules/imports/import-job.repository.ts`, `src/modules/imports/entities/import-job.entity.ts`, `src/modules/imports/import-progress-read.service.ts`.
 
 ## 14. SSE Import Progress Workflow
 
@@ -565,15 +565,15 @@ sequenceDiagram
     Note over Client,SSE: Reconnect reads latest PostgreSQL state; no event-history replay is required.
 ~~~
 
-**Diagram nay the hien:** SSE service subscribe Redis truoc khi doc PostgreSQL, emit durable snapshot truoc, sau do forward Redis live hint khong regression. Terminal status emit `completed` hoac `failed` va dong stream.
+**Diagram này thể hiện:** SSE service subscribe Redis trước khi đọc PostgreSQL, emit durable snapshot trước, sau đó forward Redis live hint không regression. Terminal status emit `completed` hoặc `failed` và đóng stream.
 
-**Invariant quan trong:** PostgreSQL la authoritative. Redis HSET/PUBLISH chi la best-effort live acceleration va khong the rollback progress da commit.
+**Invariant quan trọng:** PostgreSQL là authoritative. Redis HSET/PUBLISH chỉ là best-effort live acceleration và không thể rollback progress đã commit.
 
-**Failure behavior:** Redis live subscription loi se dong live view; reconnect doc durable state moi nhat tu PostgreSQL. Client disconnect cleanup unsubscribe va disconnect Redis subscriber.
+**Failure behavior:** Redis live subscription lỗi sẽ làm gián đoạn live view; reconnect đọc durable state mới nhất từ PostgreSQL. Client disconnect cleanup unsubscribe và disconnect Redis subscriber.
 
-**Ly do thiet ke:** Subscribe-before-snapshot dong setup race ma khong can durable event replay hoac Inbox Pattern.
+**Lý do thiết kế:** Subscribe-before-snapshot đồng thời xử lý setup race mà không cần durable event replay hoặc Inbox Pattern.
 
-**Implementation lien quan:** `src/modules/imports/imports.controller.ts`, `src/modules/imports/import-progress-read.service.ts`, `src/modules/imports/import-progress.service.ts`, `docs/vi/sse-progress.md`.
+**Implementation liên quan:** `src/modules/imports/imports.controller.ts`, `src/modules/imports/import-progress-read.service.ts`, `src/modules/imports/import-progress.service.ts`, `docs/vi/sse-progress.md`.
 
 ## 15. Transactional Outbox: Business Transaction
 
@@ -587,15 +587,15 @@ flowchart LR
     Commit --> Accepted[Accepted business effect]
 ~~~
 
-**Diagram nay the hien:** Accepted change ghi latest state, immutable change history va pending outbox event trong mot PostgreSQL transaction.
+**Diagram này thể hiện:** Accepted change ghi latest state, immutable change history và pending outbox event trong một PostgreSQL transaction.
 
-**Invariant quan trong:** Database commit khong the thanh cong voi chi business state hoac chi outbox row tu transaction nay.
+**Invariant quan trọng:** Database commit không thể thành công với chỉ business state hoặc chỉ outbox row từ transaction này.
 
-**Failure behavior:** Loi o bat ky accepted-path write nao deu rollback ca transaction. Pending outbox row khong mat sau commit thanh cong.
+**Failure behavior:** Lỗi ở bất kỳ accepted-path write nào đều rollback cả transaction. Pending outbox row không mất sau commit thành công.
 
-**Ly do thiet ke:** Transactional outbox dong dual-write gap giua PostgreSQL va asynchronous publication.
+**Lý do thiết kế:** Transactional outbox đồng thời xử lý dual-write gap giữa PostgreSQL và asynchronous publication.
 
-**Implementation lien quan:** `src/modules/changes/change-processor.ts`, `src/modules/outbox/entities/outbox-event.entity.ts`, `src/database/migrations/1760000000000-InitialCdmsSchema.ts`.
+**Implementation liên quan:** `src/modules/changes/change-processor.ts`, `src/modules/outbox/entities/outbox-event.entity.ts`, `src/database/migrations/1760000000000-InitialCdmsSchema.ts`.
 
 ## 16. Transactional Outbox: Publisher
 
@@ -624,19 +624,19 @@ sequenceDiagram
     Consumer->>Consumer: Structured duplicate-tolerant logging
 ~~~
 
-**Diagram nay the hien:** Publisher claim pending row bang `FOR UPDATE SKIP LOCKED`, gui vao downstream queue va mark thanh `PUBLISHED` trong bounded transaction.
+**Diagram này thể hiện:** Publisher claim pending row bằng `FOR UPDATE SKIP LOCKED`, gửi vào downstream queue và mark thành `PUBLISHED` trong bounded transaction.
 
-**Invariant quan trong:** `SKIP LOCKED` ngan concurrent publisher scan claim cung pending row cung luc. Downstream consumer khong mutate business table.
+**Invariant quan trọng:** `SKIP LOCKED` ngăn concurrent publisher scan claim cùng pending row cùng lúc. Downstream consumer không mutate business table.
 
-**Failure behavior:** Queue publication fail thi row van `PENDING` va tang attempt. Neu publication thanh cong nhung worker crash truoc khi database mark commit, row van pending va co the publish duplicate sau do.
+**Failure behavior:** Queue publication fail thì row vẫn `PENDING` và tăng attempt. Nếu publication thành công nhưng worker crash trước khi database mark commit, row vẫn pending và có thể publish duplicate sau đó.
 
-**Ly do thiet ke:** Outbox bao ve database-to-queue handoff ma khong tuyen bo exactly-once delivery. Duplicate downstream log la ket qua duoc chap nhan trong prototype.
+**Lý do thiết kế:** Outbox bảo vệ database-to-queue handoff mà không tuyên bố exactly-once delivery. Duplicate downstream log là kết quả được chấp nhận trong prototype.
 
-**Implementation lien quan:** `src/modules/outbox/outbox-publisher.repository.ts`, `src/modules/outbox/outbox-publisher.service.ts`, `src/modules/outbox/outbox-publisher.scheduler.ts`, `src/modules/queue/processors/downstream-outbox.processor.ts`.
+**Implementation liên quan:** `src/modules/outbox/outbox-publisher.repository.ts`, `src/modules/outbox/outbox-publisher.service.ts`, `src/modules/outbox/outbox-publisher.scheduler.ts`, `src/modules/queue/processors/downstream-outbox.processor.ts`.
 
-## 17. Failure va Retry Workflows
+## 17. Failure và Retry Workflows
 
-### 17.1 Redis khong san sang khi webhook enqueue
+### 17.1 Redis không sẵn sàng khi webhook enqueue
 
 ~~~mermaid
 flowchart LR
@@ -648,13 +648,13 @@ flowchart LR
     Redis -->|yes| Accepted[HTTP 202 after queue acceptance]
 ~~~
 
-**Diagram nay the hien:** Webhook API co acceptance boundary ro rang tai buoc insert queue vao Redis.
+**Diagram này thể hiện:** Webhook API có acceptance boundary rõ ràng tại bước insert queue vào Redis.
 
-**Invariant quan trong:** Khong co Redis acceptance thi khong co asynchronous `202` gia.
+**Invariant quan trọng:** Không có Redis acceptance thì không có asynchronous `202` giả.
 
-**Failure behavior:** Caller co the retry `503`; worker van xu ly duplicate theo semantic rules.
+**Failure behavior:** Caller có thể retry `503`; worker vẫn xử lý duplicate theo semantic rules.
 
-**Ly do thiet ke:** Tach dependency failure khoi invalid input va khoi business outcome xay ra ve sau.
+**Lý do thiết kế:** Tách dependency failure khỏi invalid input và khỏi business outcome xảy ra về sau.
 
 ### 17.2 Polling enqueue failure
 
@@ -667,15 +667,15 @@ flowchart LR
     Enqueue -->|all succeed| Advance[Write last (updatedAt, productId)]
 ~~~
 
-**Diagram nay the hien:** Polling khong advance cursor sau partial page enqueue.
+**Diagram này thể hiện:** Polling không advance cursor sau partial page enqueue.
 
-**Invariant quan trong:** Checkpoint dai dien cho page cuoi cung duoc chap nhan day du, khong phai row cuoi cung da quan sat.
+**Invariant quan trọng:** Checkpoint đại diện cho page cuối cùng được chấp nhận đầy đủ, không phải row cuối cùng đã quan sát.
 
-**Failure behavior:** Doc lai co the tao duplicate queue delivery, nhung an toan vi `ChangeProcessor` resolve business effect tai PostgreSQL.
+**Failure behavior:** Đọc lại có thể tạo duplicate queue delivery, nhưng an toàn vì `ChangeProcessor` resolve business effect tại PostgreSQL.
 
-**Ly do thiet ke:** Tranh mat change im lang khi queue dependency loi giua page.
+**Lý do thiết kế:** Tránh mất change im lặng khi queue dependency lỗi giữa page.
 
-### 17.3 Database khong san sang trong worker
+### 17.3 Database không sẵn sàng trong worker
 
 ~~~mermaid
 flowchart LR
@@ -688,15 +688,15 @@ flowchart LR
     DB -->|yes| Commit[Commit state, history, outbox]
 ~~~
 
-**Diagram nay the hien:** PostgreSQL la correctness boundary cho worker processing.
+**Diagram này thể hiện:** PostgreSQL là correctness boundary chờ worker processing.
 
-**Invariant quan trong:** Transaction fail khong de lai business effect accepted bi ghi mot phan.
+**Invariant quan trọng:** Transaction fail không để lại business effect accepted bị ghi một phần.
 
-**Failure behavior:** Worker throw de BullMQ retry job. Queue khong duoc xem la thay the cho database result da commit.
+**Failure behavior:** Worker throw để BullMQ retry job. Queue không được xem là thay thế cho database result đã commit.
 
-**Ly do thiet ke:** Infrastructure failure co the retry van duoc nhin thay, thay vi bi bien thanh successful nhung incomplete result.
+**Lý do thiết kế:** Infrastructure failure có thể retry vẫn được nhìn thấy, thay vì bị biến thành successful nhưng incomplete result.
 
-### 17.4 Worker crash sau database commit va truoc queue acknowledgement
+### 17.4 Worker crash sau database commit và trước queue acknowledgement
 
 ~~~mermaid
 flowchart LR
@@ -708,13 +708,13 @@ flowchart LR
     Duplicate --> NoWrite[No second business-state write]
 ~~~
 
-**Diagram nay the hien:** Post-commit replay la truong hop du kien trong at-least-once queue processing.
+**Diagram này thể hiện:** Post-commit replay là trường hợp dự kiến trong at-least-once queue processing.
 
-**Invariant quan trong:** PostgreSQL state, history va outbox khong bi nhan doi khi cung logical change duoc replay.
+**Invariant quan trọng:** PostgreSQL state, history và outbox không bị nhân đôi khi cùng logical change được replay.
 
-**Failure behavior:** Replay ket thuc voi semantic result thay vi tao business effect thu hai.
+**Failure behavior:** Replay kết thúc với semantic result thay vì tạo business effect thứ hai.
 
-**Ly do thiet ke:** Correctness den tu PostgreSQL lock, fingerprint, version va constraint, khong den tu queue delivery semantics.
+**Lý do thiết kế:** Correctness đến từ PostgreSQL lock, fingerprint, version và constraint, không đến từ queue delivery semantics.
 
 ### 17.5 Excel Redis timeout
 
@@ -730,15 +730,15 @@ flowchart LR
     Queue --> Worker[Import worker]
 ~~~
 
-**Diagram nay the hien:** Excel ingestion giu stream write chua hoan tat trong luc retry Redis, vi vay parser phia truoc cham lai thay vi tich luy row.
+**Diagram này thể hiện:** Excel ingestion giữ stream write chưa hoàn tất trong lúc retry Redis, vì vậy parser phía trước chậm lại thay vì tích lũy row.
 
-**Invariant quan trong:** Retry timeout co gioi han va import ghi nhan failure thay vi treo vo han.
+**Invariant quan trọng:** Retry timeout có giới hạn và import ghi nhận failure thay vì treo vô hạn.
 
-**Failure behavior:** Batch da acknowledge truoc timeout co the van con trong queue va khong duoc rollback bang distributed transaction.
+**Failure behavior:** Batch đã acknowledge trước timeout có thể vẫn còn trong queue và không được rollback bằng distributed transaction.
 
-**Ly do thiet ke:** Backpressure va explicit failure giu resource co gioi han va lam dependency boundary quan sat duoc.
+**Lý do thiết kế:** Backpressure và explicit failure giữ resource có giới hạn và làm dependency boundary quan sát được.
 
-**Implementation lien quan:** `src/modules/imports/import-streaming.service.ts`, `src/modules/imports/import-upload.service.ts`, `src/modules/queue/import-batch-queue.producer.ts`.
+**Implementation liên quan:** `src/modules/imports/import-streaming.service.ts`, `src/modules/imports/import-upload.service.ts`, `src/modules/queue/import-batch-queue.producer.ts`.
 
 ## 18. Health / Dependency Workflow
 
@@ -754,15 +754,15 @@ flowchart TD
     Both -->|no| Unhealthy[HTTP 503<br/>status=error]
 ~~~
 
-**Diagram nay the hien:** Health service probe PostgreSQL va Redis doc lap va bao cao ca hai dependency status.
+**Diagram này thể hiện:** Health service probe PostgreSQL và Redis độc lập và báo cáo cả hai dependency status.
 
-**Invariant quan trong:** Probe mot dependency loi khong che status cua dependency kia. Health la readiness/dependency status, khong mutate business.
+**Invariant quan trọng:** Probe một dependency lỗi không che status của dependency kia. Health là readiness/dependency status, không mutate business.
 
-**Failure behavior:** Mot hoac ca hai probe fail/timeout tra HTTP `503`; ca hai probe thanh cong tra HTTP `200`.
+**Failure behavior:** Một hoặc cả hai probe fail/timeout trả HTTP `503`; cả hai probe thành công trả HTTP `200`.
 
-**Ly do thiet ke:** Operator phan biet duoc dependency nao khong san sang trong khi endpoint van co timeout gioi han.
+**Lý do thiết kế:** Operator phân biệt được dependency nào không sẵn sàng trong khi endpoint vẫn có timeout giới hạn.
 
-**Implementation lien quan:** `src/modules/health/health.controller.ts`, `src/modules/health/health.service.ts`, `src/modules/health/redis-health.probe.ts`.
+**Implementation liên quan:** `src/modules/health/health.controller.ts`, `src/modules/health/health.service.ts`, `src/modules/health/redis-health.probe.ts`.
 
 ## 19. Local k6 Spike Workflow
 
@@ -778,17 +778,17 @@ flowchart LR
     Evidence[Developer-machine evidence<br/>not production benchmark or SLA] -.-> Proof
 ~~~
 
-**Diagram nay the hien:** Repository wrapper day duplicate-heavy va stale webhook ingress qua API, quan sat queue pressure, doi queue drain va verify PostgreSQL invariants.
+**Diagram này thể hiện:** Repository wrapper đẩy duplicate-heavy và stale webhook ingress qua API, quan sát queue pressure, đợi queue drain và verify PostgreSQL invariants.
 
-**Invariant quan trong:** Proof kiem tra business-state correctness sau khi queue drain, khong chi do HTTP response latency.
+**Invariant quan trọng:** Proof kiểm tra business-state correctness sau khi queue drain, không chỉ do HTTP response latency.
 
-**Failure behavior:** Wrapper tu choi chay chung voi queue backlog co san va fail neu queue khong drain hoac database proof fail.
+**Failure behavior:** Wrapper từ chối chạy chung với queue backlog có sẵn và fail nếu queue không drain hoặc database proof fail.
 
-**Ly do thiet ke:** Minh hoa bounded worker concurrency va duplicate/stale tolerance ma khong coi local measurement la production capacity.
+**Lý do thiết kế:** Minh họa bounded worker concurrency và duplicate/stale tolerance mà không coi local measurement là production capacity.
 
-**Local evidence da verify:** 4,000 k6 ingress attempts, 4,000 response `202` accepted, maximum waiting jobs 261, maximum active jobs 10, 100 `product_state` row, 100 `product_changes` row, 100 outbox row, zero duplicate-version violation va zero stale regression. Baseline rieng 100 request duoc tinh trong tong 4,100 attempts cua runner.
+**Local evidence đã verify:** 4,000 k6 ingress attempts, 4,000 response `202` accepted, maximum waiting jobs 261, maximum active jobs 10, 100 `product_state` row, 100 `product_changes` row, 100 outbox row, zero duplicate-version violation và zero stale regression. Baseline riêng 100 request được tính trong tổng 4,100 attempts của runner.
 
-**Implementation lien quan:** `load-tests/run-spike.mjs`, `load-tests/spike.js`, `load-tests/results/run-1788887228601-1abb3b45.json`, `src/modules/queue/processors/change-queue.processor.ts`.
+**Implementation liên quan:** `load-tests/run-spike.mjs`, `load-tests/spike.js`, `load-tests/results/run-1788887228601-1abb3b45.json`, `src/modules/queue/processors/change-queue.processor.ts`.
 
 ## 20. End-to-End Interviewer View
 
@@ -810,15 +810,15 @@ flowchart LR
     PG --> ImportProgress
 ~~~
 
-**Diagram nay the hien:** Moi source den worker va `ChangeProcessor`; business state, history va outbox duoc commit trong PostgreSQL. Excel progress co durable accounting rieng va Redis Pub/Sub live view duoc gui qua SSE.
+**Diagram này thể hiện:** Mỗi source đến worker và `ChangeProcessor`; business state, history và outbox được commit trong PostgreSQL. Excel progress có durable accounting riêng và Redis Pub/Sub live view được gửi qua SSE.
 
-**Invariant quan trong:** PostgreSQL authoritative cho business state va durable import progress. Redis/BullMQ la asynchronous infrastructure, khong phai correctness boundary.
+**Invariant quan trọng:** PostgreSQL authoritative cho business state và durable import progress. Redis/BullMQ là asynchronous infrastructure, không phải correctness boundary.
 
-**Failure behavior:** Queue, worker, Redis Pub/Sub hoac dependency failure duoc xu ly bang retry, replay, terminal failure hoac reconnect ro rang; khong queue nao duoc goi la exactly-once delivery.
+**Failure behavior:** Queue, worker, Redis Pub/Sub hoặc dependency failure được xử lý bằng retry, replay, terminal failure hoặc reconnect rõ ràng; không queue nào được gọi là exactly-once delivery.
 
-**Ly do thiet ke:** Day la interview view ngan gon: nhieu ingress mechanism, mot correctness path, transactional outbox va Excel progress co the quan sat.
+**Lý do thiết kế:** Đây là interview view ngắn gọn: nhiều ingress mechanism, một correctness path, transactional outbox và Excel progress có thể quan sát.
 
-**Implementation lien quan:** `src/app.module.ts`, `src/worker.module.ts`, `src/modules/changes/`, `src/modules/queue/`, `src/modules/imports/`, `src/modules/outbox/`, `src/modules/health/`.
+**Implementation liên quan:** `src/app.module.ts`, `src/worker.module.ts`, `src/modules/changes/`, `src/modules/queue/`, `src/modules/imports/`, `src/modules/outbox/`, `src/modules/health/`.
 
 ## Cross-reference
 
@@ -829,4 +829,4 @@ flowchart LR
 - [Transactional outbox](transactional-outbox.md)
 - [SSE progress](sse-progress.md)
 - [Testing](testing.md)
-- [Huong dan su dung cho nguoi dung va reviewer](usage-guide.md)
+- [Hướng dẫn sử dụng cho người dùng và reviewer](usage-guide.md)
