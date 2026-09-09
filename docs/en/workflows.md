@@ -487,7 +487,7 @@ sequenceDiagram
 ~~~mermaid
 flowchart TD
     FinishBatch[Worker finishes logical batch] --> Begin[BEGIN DB transaction]
-    Begin --> Marker[INSERT import_batch_accounting(importId, batchId)]
+    Begin --> Marker["INSERT import_batch_accounting(importId, batchId)"]
     Marker --> Existing{Marker inserted?}
     Existing -->|no, conflict| Already[Progress already accounted]
     Already --> CommitExisting[COMMIT / return accounted=false]
@@ -566,9 +566,11 @@ sequenceDiagram
         SSE-->>Client: failed event
         SSE-->>Client: Close connection
     end
-
-    Note over Client,SSE: Reconnect reads latest PostgreSQL state; no event-history replay is required.
 ~~~
+
+Note over Client,SSE: 
+Reconnect reads latest PostgreSQL state; 
+no event-history replay is required.
 
 **What this shows:** The SSE service subscribes to Redis before reading PostgreSQL, emits the durable snapshot first, then forwards non-regressing Redis live hints. Terminal status emits `completed` or `failed` and closes the stream.
 
@@ -669,7 +671,7 @@ flowchart LR
     Enqueue -->|one fails| Stop[Stop page]
     Stop --> Checkpoint[Checkpoint unchanged]
     Checkpoint --> Next[Next poll rereads page]
-    Enqueue -->|all succeed| Advance[Write last (updatedAt, productId)]
+    Enqueue -->|all succeed| Advance["Write last (updatedAt, productId)"]
 ~~~
 
 **What this shows:** Polling does not advance its cursor after a partial page enqueue.

@@ -350,31 +350,36 @@ flowchart LR
 
 ~~~mermaid
 flowchart TD
-    Input[Normalized ProductChangeInput] --> Begin[BEGIN PostgreSQL transaction]
-    Begin --> Lock[pg_advisory_xact_lock(productId)]
-    Lock --> Fingerprint[Compute canonical fingerprint]
-    Fingerprint --> Read[Read product_state]
-    Read --> Current{Current state?}
+    Input["Normalized ProductChangeInput"] --> Begin["BEGIN PostgreSQL transaction"]
+    Begin --> Lock["pg_advisory_xact_lock(productId)"]
+    Lock --> Fingerprint["Compute canonical fingerprint"]
+    Fingerprint --> Read["Read product_state"]
+    Read --> Current{"Current state?"}
 
-    Current -->|none| Accept[ACCEPTED]
-    Current -->|exists| Version{Incoming version compared with current}
+    Current -->|none| Accept["ACCEPTED"]
+    Current -->|exists| Version{"Incoming version compared with current"}
 
-    Version -->|incoming < current| Stale[STALE]
-    Version -->|incoming > current| Accept
-    Version -->|same version| SameFingerprint{Fingerprint same?}
-    SameFingerprint -->|yes| Duplicate[DUPLICATE]
-    SameFingerprint -->|no| Conflict[VERSION_CONFLICT]
+    Version -->|"incoming < current"| Stale["STALE"]
+    Version -->|"incoming > current"| Accept
+    Version -->|"same version"| SameFingerprint{"Fingerprint same?"}
 
-    Accept --> History[Insert product_changes]
-    History --> State[Upsert product_state]
-    State --> Outbox[Insert outbox_events]
-    Outbox --> Commit[COMMIT]
-    Stale --> Finish[Finish without business-state writes]
+    SameFingerprint -->|yes| Duplicate["DUPLICATE"]
+    SameFingerprint -->|no| Conflict["VERSION_CONFLICT"]
+
+    Accept --> History["Insert product_changes"]
+    History --> State["Upsert product_state"]
+    State --> Outbox["Insert outbox_events"]
+    Outbox --> Commit["COMMIT"]
+
+    Stale --> Finish["Finish without business-state writes"]
     Duplicate --> Finish
     Conflict --> Finish
-    Commit --> Result[Return ACCEPTED]
-    Finish --> Result2[Return semantic result]
-    Defensive[UNIQUE product_changes(product_id, version)] -. defensive invariant .-> History
+
+    Commit --> Result["Return ACCEPTED"]
+    Finish --> Result2["Return semantic result"]
+
+    Defensive["UNIQUE product_changes(product_id, version)"]
+        -. "defensive invariant" .-> History
 ~~~
 
 **Diagram này thể hiện:** Mỗi lần `ChangeProcessor.process` mở transaction, lấy transaction-scoped advisory lock, tính canonical fingerprint, đọc current state và chọn semantic result.
@@ -482,7 +487,7 @@ sequenceDiagram
 ~~~mermaid
 flowchart TD
     FinishBatch[Worker finishes logical batch] --> Begin[BEGIN DB transaction]
-    Begin --> Marker[INSERT import_batch_accounting(importId, batchId)]
+    Begin --> Marker["INSERT import_batch_accounting(importId, batchId)"]
     Marker --> Existing{Marker inserted?}
     Existing -->|no, conflict| Already[Progress already accounted]
     Already --> CommitExisting[COMMIT / return accounted=false]
@@ -562,8 +567,11 @@ sequenceDiagram
         SSE-->>Client: Close connection
     end
 
-    Note over Client,SSE: Reconnect reads latest PostgreSQL state; no event-history replay is required.
 ~~~
+
+Note over Client,SSE: 
+Reconnect reads latest PostgreSQL state; 
+no event-history replay is required.
 
 **Diagram này thể hiện:** SSE service subscribe Redis trước khi đọc PostgreSQL, emit durable snapshot trước, sau đó forward Redis live hint không regression. Terminal status emit `completed` hoặc `failed` và đóng stream.
 
@@ -664,7 +672,7 @@ flowchart LR
     Enqueue -->|one fails| Stop[Stop page]
     Stop --> Checkpoint[Checkpoint unchanged]
     Checkpoint --> Next[Next poll rereads page]
-    Enqueue -->|all succeed| Advance[Write last (updatedAt, productId)]
+    Enqueue -->|all succeed| Advance["Write last (updatedAt, productId)"]
 ~~~
 
 **Diagram này thể hiện:** Polling không advance cursor sau partial page enqueue.
