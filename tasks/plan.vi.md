@@ -13,7 +13,7 @@ Ke hoach nay implement `SPEC.md` da duoc approve ma khong doi kien truc. Project
 - TypeORM transactions va `QueryRunner`: document tai https://typeorm.io/docs/transactions/.
 - PostgreSQL transaction-level advisory locks: document tai https://www.postgresql.org/docs/current/explicit-locking.html.
 - BullMQ concurrency va retry/backoff: document tai https://docs.bullmq.io/guide/workers/concurrency va https://docs.bullmq.io/guide/retrying-failing-jobs.
-- ExcelJS streaming reader: document trong README tai https://raw.githubusercontent.com/exceljs/exceljs/master/README.md.
+- Excel streaming qualification: `exceljs@4.4.0` documented `WorkbookReader` fail voi XLSX hop le do ExcelJS tao. `xlsx-extract@0.2.0` va `xlsx-stream-reader@1.1.1` bi reject vi EventEmitter row APIs chay ahead of async consumer va khong the cung cap producer-side backpressure bat buoc. Task 19 dung narrow internal reader xay dung tren `yauzl` ZIP entry streams va `sax`, expose worksheet rows qua Node object-mode stream. No can bounded temporary-file staging; no giu workbook metadata va shared strings, nhung khong giu XLSX buffer hoac tat ca worksheet rows/cells.
 
 Khong co official documentation nao da review cho plan mau thuan voi SPEC da approve.
 
@@ -379,37 +379,37 @@ Foundation tasks tao Jest/config/Docker/database primitives truoc. Contract va p
 
 **Files/modules expected to change:** `src/modules/imports/**/*.spec.ts`, `test/fixtures/*`, e2e tests.
 
-**Implementation scope:** Tests cho row validation, upload size enforcement khong full buffering, bounded batches, no busy-looping, Redis enqueue retry timeout, malformed rows.
+**Implementation scope:** Tests cho row validation, upload size enforcement trong khi multipart bytes stage vao bounded temporary file, incremental parser-to-batch production, khong busy-looping, Redis enqueue retry timeout, malformed rows, temporary-file cleanup, va generated-path isolation.
 
-**Test strategy:** Unit tests cho row parsing/validation; e2e streaming upload tests; mocked queue backpressure/retry tests.
+**Test strategy:** Unit tests cho row parsing/validation va Phase B backpressure; e2e streaming upload tests; mocked queue backpressure/retry tests. Chung minh staging ket thuc truoc parsing, sau do full batch enqueue khi XLSX parser con unread rows va chua emit EOF. Khong yeu cau enqueue truoc HTTP upload EOF.
 
 **Verification commands:** `pnpm test -- imports`, `pnpm test:e2e -- imports`.
 
-**Acceptance criteria:** Tests dinh nghia memory/backpressure expectations va fail truoc implementation khi phu hop.
+**Acceptance criteria:** Tests dinh nghia bounded staging, path isolation, cleanup, parser-EOF-before-full-workbook-materialization, va backpressure expectations; tests fail truoc implementation khi phu hop. Test contract cho phep upload EOF truoc khi parsing bat dau nhung khong cho phep full upload/workbook buffering hoac unbounded row collection.
 
 **Documentation impact:** Excel streaming docs sau.
 
-**Comment requirements:** Ten test phai neu streaming va bounded-production invariants.
+**Comment requirements:** Ten test va non-obvious fixtures phai state Phase A/Phase B boundary, parser-EOF streaming invariant, cleanup/security behavior, va bounded-production invariant.
 
 ### Task 19: Implement Import Job Lifecycle Va Excel Streaming
 
-**Objective:** Implement `POST /imports/products` voi streaming parse, upload limit, bounded production, Redis retry timeout, va ingestion-phase import lifecycle.
+**Objective:** Implement `POST /imports/products` voi bounded two-phase XLSX ingestion, upload limit, bounded production, Redis retry timeout, va ingestion-phase import lifecycle.
 
 **Dependencies:** Task 18.
 
 **Files/modules expected to change:** `src/modules/imports/*`, queue producer, tests.
 
-**Implementation scope:** Multipart stream handling, ExcelJS streaming reader hoac verified alternative, row validation, batch enqueue, va ingestion-phase status transitions. Task 19 so huu `CREATED -> UPLOADING -> PROCESSING` va co the transition sang `FAILED` khi multipart upload khong the tiep tuc, streaming parser fail o file level, upload size limit bi vuot, bounded Redis enqueue retry het han, hoac ingestion-phase error khong recover khac xay ra. Flow thanh cong ket thuc o `PROCESSING` sau khi upload parsing va enqueue production ket thuc thanh cong, va ghi durable enqueue-completion signal. Task 19 khong duoc mark import da upload/enqueue thanh cong la `COMPLETED`.
+**Implementation scope:** Phase A stream Busboy file `Readable` vao generated unique file trong controlled temporary directory, enforce byte limit trong khi write, va khong bao gio trust client filename lam path. Phase B mo staged file qua `yauzl` ZIP entry Readables, incrementally parse selected worksheet XML voi `sax`, expose raw rows qua Node object-mode stream, sau do normalize rows va produce bounded BullMQ batches. Temporary file khong phai durable storage va duoc delete trong `finally` o moi terminal success/failure path. Trong Phase B, blocked Redis batch giu BullMQ Writable unresolved de Node stream backpressure pause XLSX row consumption va retry cung batch trong timeout; khong doc va discard rows. Task 19 so huu `CREATED -> UPLOADING -> PROCESSING` va co the transition sang `FAILED` khi multipart upload khong the tiep tuc, streaming parser fail o file level, upload size limit bi vuot, bounded Redis enqueue retry het han, hoac ingestion-phase error khong recover khac xay ra. Flow thanh cong chi ket thuc o `PROCESSING` sau ca hai phase, final partial-batch submission, va moi pending enqueue thanh cong; flow ghi durable enqueue-completion signal va khong duoc mark import da upload/enqueue thanh cong la `COMPLETED`.
 
-**Test strategy:** Pass Task 18 tests; them integration tests chung minh persisted import job state transition qua `CREATED`, `UPLOADING`, va `PROCESSING`, mark `FAILED` cho ingestion-phase failures, ghi enqueue completion khi production thanh cong, va khong mark `COMPLETED` chi sau upload/enqueue.
+**Test strategy:** Pass Task 18 tests; them integration tests cho controlled unique paths, cleanup khi success va moi terminal failure, upload-limit cleanup truoc parsing, va partial-queue/parser-failure semantics. Chung minh Phase B co the enqueue full batch truoc parser EOF sau staging, trong khi khong co all-row collection. Chung minh persisted import job state transitions qua `CREATED`, `UPLOADING`, va `PROCESSING`, mark `FAILED` cho ingestion-phase failures, ghi enqueue completion khi production thanh cong, va khong mark `COMPLETED` chi sau upload/enqueue.
 
 **Verification commands:** `pnpm typecheck`, `pnpm test -- imports`, `pnpm test:e2e -- imports`.
 
-**Acceptance criteria:** Khong bao gio buffer full upload; size limit enforce khi streaming; bounded batches lam cham production; Redis timeout mark import `FAILED`; upload parsing/enqueue production thanh cong ket thuc o `PROCESSING` voi enqueue completion duoc ghi va khong bao gio mark `COMPLETED` qua som.
+**Acceptance criteria:** Multipart bytes khong bao gio fully buffered va chi write vao controlled generated temporary paths; limit duoc enforce trong Phase A; temporary file duoc remove o moi terminal path; Phase B incrementally process parser rows voi bounded batches va pending work; Redis timeout mark import `FAILED`; successful two-phase upload parsing/enqueue production ket thuc o `PROCESSING` voi enqueue completion recorded va khong prematurely mark `COMPLETED`. Memory bounded theo worksheet rows va pending batches, trong khi metadata/shared-string memory van duoc document.
 
 **Documentation impact:** Excel/failure docs sau.
 
-**Comment requirements:** Comment streaming parser lifecycle, backpressure mechanism, Redis retry timeout, malformed row handling, vi sao upload/enqueue completion khong phai processing completion, enqueue-completion invariant, va ingestion-phase failure modes.
+**Comment requirements:** Comment Phase A/Phase B lifecycle, temporary-path security va cleanup, parser/backpressure mechanism, Redis retry timeout, malformed-row versus file-level failure handling, partial-queue/parser-failure trade-off, vi sao upload/enqueue completion khong phai processing completion, enqueue-completion invariant, shared-string memory trade-off, va ingestion-phase failure modes.
 
 ### Task 20: Atomic Redis Progress Counters Va Import Batch Worker
 
@@ -419,17 +419,17 @@ Foundation tasks tao Jest/config/Docker/database primitives truoc. Contract va p
 
 **Files/modules expected to change:** `src/modules/imports/import-progress*`, `src/modules/queue/processors/import-batch*`, tests.
 
-**Implementation scope:** Import batch processor goi ChangeProcessor tung row, ghi row terminal outcomes, update Redis atomic, va persist durable progress. Uploader/import service increment `rowsRead`; import batch workers increment `rowsProcessed`, `rowsSucceeded`, va `rowsFailed`; PostgreSQL van la durable import lifecycle state; Redis van la live progress coordination. Dieu kien duoc mark complete phai can ca ingestion/enqueue production da ket thuc thanh cong, qua durable signal nhu `enqueueCompletedAt`/`enqueue_completed_at`, va `rowsProcessed === rowsRead`. Khong determine completion chi dua vao `rowsProcessed === rowsRead`.
+**Implementation scope:** Task 19 assign `batchId` deterministic truoc first enqueue va carry no qua BullMQ retries. Import-batch processor goi ChangeProcessor tung row va ghi semantic outcomes nhu successes. `import_batch_accounting` la minimal accounting marker keyed boi `(import_id, batch_id)` va terminal aggregate delta; no khong phai Inbox va khong luu payload hoac business state. O non-final attempt, unexpected failure throw ma khong accounting; o final allowed attempt, unexpected rows count failed trong khi remaining rows tiep tuc. Mot PostgreSQL transaction insert marker voi `ON CONFLICT DO NOTHING`, chi apply counters cho marker moi, va conditionally transition `PROCESSING -> COMPLETED`. Uploader/import service increment `rowsRead`; import batch workers increment `rowsProcessed`, `rowsSucceeded`, va `rowsFailed`; PostgreSQL van la durable import lifecycle state; Redis chi nhan atomic post-commit live snapshot. Completion can ca `enqueue_completed_at` va `rowsProcessed === rowsRead`; khong determine chi dua vao counters.
 
-**Test strategy:** Concurrent worker tests cho progress invariants, terminal completion, va final-batch races. Them tests trong do `rowsProcessed === rowsRead` tam thoi trong khi upload production van mo, chung minh `COMPLETED` khong the xay ra truoc khi co durable enqueue-completion signal. Them tests trong do nhieu workers finish gan dong thoi va chi co mot logical terminal transition.
+**Test strategy:** Chung minh batch replay va simulated post-commit/pre-ack replay chi them mot durable delta, trong khi concurrent duplicate deliveries tao mot accounting marker. Test non-final retry khong accounting, final-attempt terminal failures, malformed pre-enqueue rows, FAILED non-resurrection, PostgreSQL final-batch races, va real Redis/BullMQ retry. Them tests trong do `rowsProcessed === rowsRead` tam thoi trong khi upload production van mo, chung minh `COMPLETED` khong the xay ra truoc durable enqueue-completion signal.
 
 **Verification commands:** `pnpm typecheck`, `pnpm test -- progress`, `pnpm test:integration -- imports`.
 
-**Acceptance criteria:** `rowsProcessed = rowsSucceeded + rowsFailed`, `rowsProcessed <= rowsRead`, `COMPLETED` can enqueue phase completed va `rowsProcessed = rowsRead`, va concurrent updates tao mot terminal state dung ma khong duplicate terminal transitions.
+**Acceptance criteria:** Deterministic batch ID va accounting marker lam durable progress retry-idempotent ma khong tro thanh Inbox; `rowsProcessed = rowsSucceeded + rowsFailed`; `rowsProcessed <= rowsRead`; `COMPLETED` can enqueue phase completed va `rowsProcessed = rowsRead`; retries/concurrent updates tao mot terminal state dung ma khong duplicate aggregate deltas hoac terminal transitions.
 
 **Documentation impact:** SSE/progress docs sau.
 
-**Comment requirements:** Comment atomic Redis operation choice, invariant preservation, vi sao `rowsProcessed === rowsRead` mot minh la khong an toan, final-batch terminal transition race, durable enqueue-completion signal, va durable-vs-live progress trade-off.
+**Comment requirements:** Comment business-versus-progress idempotency, post-commit/pre-ack crash window, batch retry va final-attempt semantics, atomic marker/counter transaction, invariant preservation, vi sao `rowsProcessed === rowsRead` mot minh la khong an toan, final-batch terminal transition race, durable enqueue-completion signal, FAILED non-resurrection, va durable-versus-live Redis trade-off.
 
 ### Task 21: SSE Progress Va Import Status API
 
@@ -586,7 +586,7 @@ Foundation tasks tao Jest/config/Docker/database primitives truoc. Contract va p
 - Task 9: PostgreSQL advisory locks qua TypeORM.
 - Task 13: NestJS BullMQ queue/processor APIs va BullMQ retry/concurrency options.
 - Task 16: NestJS Schedule setup va scheduler lifecycle.
-- Task 19: streaming multipart parser va ExcelJS streaming APIs.
+- Task 19: Busboy streaming semantics, Node temporary-file APIs, `yauzl` ZIP entry stream behavior, va `sax` incremental XML parser behavior.
 - Task 20: Redis atomic operations cho progress counters.
 - Task 21: NestJS SSE `Observable<MessageEvent>` behavior va disconnect handling.
 

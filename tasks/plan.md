@@ -13,7 +13,7 @@ This plan implements the approved `SPEC.md` without changing its architecture. T
 - TypeORM transactions and `QueryRunner`: documented in https://typeorm.io/docs/transactions/.
 - PostgreSQL transaction-level advisory locks: documented in https://www.postgresql.org/docs/current/explicit-locking.html.
 - BullMQ concurrency and retry/backoff: documented in https://docs.bullmq.io/guide/workers/concurrency and https://docs.bullmq.io/guide/retrying-failing-jobs.
-- ExcelJS streaming reader: documented in the project README at https://raw.githubusercontent.com/exceljs/exceljs/master/README.md.
+- Excel streaming qualification: `exceljs@4.4.0` documented `WorkbookReader` failed on an ExcelJS-generated valid XLSX. `xlsx-extract@0.2.0` and `xlsx-stream-reader@1.1.1` were rejected because their EventEmitter row APIs run ahead of an asynchronous consumer and cannot provide the required producer-side backpressure. Task 19 uses a narrow internal reader built on `yauzl` ZIP entry streams and `sax`, exposing worksheet rows through a Node object-mode stream. It requires bounded temporary-file staging; it retains workbook metadata and shared strings, but not the XLSX buffer or all worksheet rows/cells.
 
 No official documentation reviewed for the plan contradicts the approved SPEC.
 
@@ -379,37 +379,37 @@ Foundation tasks create Jest/config/Docker/database primitives first. Contract a
 
 **Files/modules expected to change:** `src/modules/imports/**/*.spec.ts`, `test/fixtures/*`, e2e tests.
 
-**Implementation scope:** Tests for row validation, upload size enforcement without full buffering, bounded batches, no busy-looping, Redis enqueue retry timeout, malformed rows.
+**Implementation scope:** Tests for row validation, upload size enforcement while multipart bytes stage to a bounded temporary file, incremental parser-to-batch production, no busy-looping, Redis enqueue retry timeout, malformed rows, temporary-file cleanup, and generated-path isolation.
 
-**Test strategy:** Unit tests for row parsing/validation; e2e streaming upload tests; mocked queue backpressure/retry tests.
+**Test strategy:** Unit tests for row parsing/validation and Phase B backpressure; e2e streaming upload tests; mocked queue backpressure/retry tests. Prove staging finishes before parsing, then a full batch enqueues while the XLSX parser still has unread rows and has not emitted EOF. Do not require enqueue before HTTP upload EOF.
 
 **Verification commands:** `pnpm test -- imports`, `pnpm test:e2e -- imports`.
 
-**Acceptance criteria:** Tests define memory/backpressure expectations and fail before implementation where practical.
+**Acceptance criteria:** Tests define bounded staging, path isolation, cleanup, parser-EOF-before-full-workbook-materialization, and backpressure expectations; they fail before implementation where practical. The test contract permits upload EOF before parsing begins but does not permit full upload/workbook buffering or unbounded row collection.
 
 **Documentation impact:** Excel streaming docs later.
 
-**Comment requirements:** Test names must state streaming and bounded-production invariants.
+**Comment requirements:** Test names and non-obvious fixtures must state the Phase A/Phase B boundary, parser-EOF streaming invariant, cleanup/security behavior, and bounded-production invariant.
 
 ### Task 19: Import Job Lifecycle and Excel Streaming Implementation
 
-**Objective:** Implement `POST /imports/products` with streaming parse, upload limit, bounded production, Redis retry timeout, and ingestion-phase import lifecycle.
+**Objective:** Implement `POST /imports/products` with bounded two-phase XLSX ingestion, upload limit, bounded production, Redis retry timeout, and ingestion-phase import lifecycle.
 
 **Dependencies:** Task 18.
 
 **Files/modules expected to change:** `src/modules/imports/*`, queue producer, tests.
 
-**Implementation scope:** Multipart stream handling, ExcelJS streaming reader or verified alternative, row validation, batch enqueue, and ingestion-phase status transitions. Task 19 owns `CREATED -> UPLOADING -> PROCESSING` and may transition to `FAILED` when multipart upload cannot continue, the streaming parser fails at file level, the upload size limit is exceeded, bounded Redis enqueue retry expires, or another unrecoverable ingestion-phase error occurs. A successful flow ends at `PROCESSING` after upload parsing and enqueue production finish successfully, and records the durable enqueue-completion signal. Task 19 must not mark a successfully uploaded/enqueued import as `COMPLETED`.
+**Implementation scope:** Phase A streams the Busboy file `Readable` to a generated unique file under a controlled temporary directory, enforces the byte limit while writing, and never trusts the client filename as a path. Phase B opens the staged file through `yauzl` ZIP entry Readables, incrementally parses the selected worksheet XML with `sax`, exposes raw rows through a Node object-mode stream, then normalizes rows and produces bounded BullMQ batches. The temporary file is not durable storage and is deleted in `finally` on every terminal success/failure path. During Phase B, a blocked Redis batch keeps the BullMQ Writable unresolved so Node stream backpressure pauses XLSX row consumption and retries that same batch within the timeout; it never reads and discards rows. Task 19 owns `CREATED -> UPLOADING -> PROCESSING` and may transition to `FAILED` when multipart upload cannot continue, the streaming parser fails at file level, the upload size limit is exceeded, bounded Redis enqueue retry expires, or another unrecoverable ingestion-phase error occurs. A successful flow ends at `PROCESSING` only after both phases, final partial-batch submission, and all pending enqueues succeed; it records the durable enqueue-completion signal and must not mark a successfully uploaded/enqueued import as `COMPLETED`.
 
-**Test strategy:** Pass Task 18 tests; add integration tests proving persisted import job state transitions through `CREATED`, `UPLOADING`, and `PROCESSING`, marks `FAILED` for ingestion-phase failures, records enqueue completion on successful production, and does not mark `COMPLETED` after upload/enqueue alone.
+**Test strategy:** Pass Task 18 tests; add integration tests for controlled unique paths, cleanup on success and each terminal failure, upload-limit cleanup before parsing, and partial-queue/parser-failure semantics. Prove Phase B can enqueue a full batch before parser EOF after staging, while no all-row collection occurs. Prove persisted import job state transitions through `CREATED`, `UPLOADING`, and `PROCESSING`, marks `FAILED` for ingestion-phase failures, records enqueue completion on successful production, and does not mark `COMPLETED` after upload/enqueue alone.
 
 **Verification commands:** `pnpm typecheck`, `pnpm test -- imports`, `pnpm test:e2e -- imports`.
 
-**Acceptance criteria:** Full upload is never buffered; size limit is enforced while streaming; bounded batches slow production; Redis timeout marks import `FAILED`; successful upload parsing/enqueue production ends at `PROCESSING` with enqueue completion recorded and never prematurely marks `COMPLETED`.
+**Acceptance criteria:** Multipart bytes are never fully buffered and write only to controlled generated temporary paths; the limit is enforced during Phase A; the temporary file is removed on every terminal path; Phase B incrementally processes parser rows with bounded batches and pending work; Redis timeout marks import `FAILED`; successful two-phase upload parsing/enqueue production ends at `PROCESSING` with enqueue completion recorded and never prematurely marks `COMPLETED`. Memory is bounded with respect to worksheet rows and pending batches, while metadata/shared-string memory remains documented.
 
 **Documentation impact:** Excel/failure docs later.
 
-**Comment requirements:** Comment streaming parser lifecycle, backpressure mechanism, Redis retry timeout, malformed row handling, why upload/enqueue completion is not processing completion, the enqueue-completion invariant, and ingestion-phase failure modes.
+**Comment requirements:** Comment Phase A/Phase B lifecycle, temporary-path security and cleanup, parser/backpressure mechanism, Redis retry timeout, malformed-row versus file-level failure handling, partial-queue/parser-failure trade-off, why upload/enqueue completion is not processing completion, the enqueue-completion invariant, shared-string memory trade-off, and ingestion-phase failure modes.
 
 ### Task 20: Atomic Redis Progress Counters and Import Batch Worker
 
@@ -419,17 +419,17 @@ Foundation tasks create Jest/config/Docker/database primitives first. Contract a
 
 **Files/modules expected to change:** `src/modules/imports/import-progress*`, `src/modules/queue/processors/import-batch*`, tests.
 
-**Implementation scope:** Import batch processor calls ChangeProcessor per row, records row terminal outcomes, updates Redis atomically, and persists durable progress. The uploader/import service increments `rowsRead`; import batch workers increment `rowsProcessed`, `rowsSucceeded`, and `rowsFailed`; PostgreSQL remains the durable import lifecycle state; Redis remains live progress coordination. Completion eligibility must require both ingestion/enqueue production finished successfully, via a durable signal such as `enqueueCompletedAt`/`enqueue_completed_at`, and `rowsProcessed === rowsRead`. Do not determine completion from `rowsProcessed === rowsRead` alone.
+**Implementation scope:** Task 19 assigns a deterministic `batchId` before the first enqueue and carries it through BullMQ retries. The import-batch processor calls ChangeProcessor per row and records semantic outcomes as successes. `import_batch_accounting` is a minimal accounting marker keyed by `(import_id, batch_id)` and terminal aggregate delta; it is not an Inbox and stores neither payloads nor business state. On a non-final attempt, unexpected failure throws with no accounting; on the final allowed attempt, unexpected rows count failed while remaining rows continue. One PostgreSQL transaction inserts the marker with `ON CONFLICT DO NOTHING`, applies counters only for a new marker, and conditionally transitions `PROCESSING -> COMPLETED`. The uploader/import service increments `rowsRead`; import batch workers increment `rowsProcessed`, `rowsSucceeded`, and `rowsFailed`; PostgreSQL remains the durable import lifecycle state; Redis receives only an atomic post-commit live snapshot. Completion eligibility requires both `enqueue_completed_at` and `rowsProcessed === rowsRead`; do not determine it from counters alone.
 
-**Test strategy:** Concurrent worker tests for progress invariants, terminal completion, and final-batch races. Include tests where `rowsProcessed === rowsRead` temporarily while upload production is still open, proving `COMPLETED` cannot occur before the durable enqueue-completion signal exists. Include tests where multiple workers finish near-simultaneously and only one logical terminal transition occurs.
+**Test strategy:** Prove batch replay and simulated post-commit/pre-ack replay add one durable delta, while concurrent duplicate deliveries create one accounting marker. Test non-final retry without accounting, final-attempt terminal failures, malformed pre-enqueue rows, FAILED non-resurrection, PostgreSQL final-batch races, and real Redis/BullMQ retry. Include tests where `rowsProcessed === rowsRead` temporarily while upload production is still open, proving `COMPLETED` cannot occur before the durable enqueue-completion signal exists.
 
 **Verification commands:** `pnpm typecheck`, `pnpm test -- progress`, `pnpm test:integration -- imports`.
 
-**Acceptance criteria:** `rowsProcessed = rowsSucceeded + rowsFailed`, `rowsProcessed <= rowsRead`, `COMPLETED` requires enqueue phase completed and `rowsProcessed = rowsRead`, and concurrent updates produce one correct terminal state without duplicate terminal transitions.
+**Acceptance criteria:** A deterministic batch ID and accounting marker make durable progress retry-idempotent without becoming an Inbox; `rowsProcessed = rowsSucceeded + rowsFailed`; `rowsProcessed <= rowsRead`; `COMPLETED` requires enqueue phase completed and `rowsProcessed = rowsRead`; retries/concurrent updates produce one correct terminal state without duplicate aggregate deltas or terminal transitions.
 
 **Documentation impact:** SSE/progress docs later.
 
-**Comment requirements:** Comment atomic Redis operation choice, invariant preservation, why `rowsProcessed === rowsRead` alone is unsafe, final-batch terminal transition race, durable enqueue-completion signal, and durable-vs-live progress trade-off.
+**Comment requirements:** Comment business-versus-progress idempotency, the post-commit/pre-ack crash window, batch retry and final-attempt semantics, atomic marker/counter transaction, invariant preservation, why `rowsProcessed === rowsRead` alone is unsafe, final-batch terminal transition race, durable enqueue-completion signal, FAILED non-resurrection, and durable-versus-live Redis trade-off.
 
 ### Task 21: SSE Progress and Import Status API
 
@@ -586,7 +586,7 @@ Foundation tasks create Jest/config/Docker/database primitives first. Contract a
 - Task 9: PostgreSQL advisory locks through TypeORM.
 - Task 13: NestJS BullMQ queue/processor APIs and BullMQ retry/concurrency options.
 - Task 16: NestJS Schedule setup and scheduler lifecycle.
-- Task 19: streaming multipart parser and ExcelJS streaming APIs.
+- Task 19: Busboy streaming semantics, Node temporary-file APIs, `yauzl` ZIP entry stream behavior, and `sax` incremental XML parser behavior.
 - Task 20: Redis atomic operations for progress counters.
 - Task 21: NestJS SSE `Observable<MessageEvent>` behavior and disconnect handling.
 

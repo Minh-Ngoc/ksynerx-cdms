@@ -333,21 +333,27 @@ Webhook processing validate input, normalize payload, enqueue normalized change,
 
 ## 19. Excel Streaming
 
-Excel imports phai dung streaming-capable library nhu ExcelJS streaming reader sau khi verify docs trong implementation. Flow:
+Excel imports dung narrow internal streaming reader tren staged XLSX file. Flow co hai phase bounded:
 
 ```text
-multipart stream -> streaming Excel reader -> row validation -> normalization -> bounded batches -> BullMQ
+multipart file stream -> bounded temporary XLSX file -> ZIP entry Readable -> SAX row stream -> object-mode batch Transform -> BullMQ Writable
 ```
 
-Server khong duoc load full upload, workbook, hoac full row set vao memory.
+Phase A streaming multipart bytes toi generated, unique path trong controlled temporary directory. Client filename khong duoc dung lam filesystem path. Temporary file chi la ingestion staging, khong phai durable storage, va phai duoc xoa trong `finally` khi success, parser failure, Redis retry timeout, upload limit failure, request/stream failure, hoac bat ky terminal ingestion error nao.
+
+Phase B chi bat dau sau khi Phase A hoan tat thanh cong. Reader chi mo required ZIP entries, giu shared strings lam lookup table, va expose worksheet rows qua object-mode Node stream. Batch Transform va BullMQ Writable phai preserve Node stream backpressure de pending queue write stop additional worksheet consumption. Server khong duoc load full upload, XLSX buffer, hoac worksheet row set vao memory. Khong duoc dung `Buffer.concat`, `fs.readFile` cho upload, `Workbook.xlsx.load(buffer)`, `XLSX.read(fullBuffer)`, hoac unbounded `allRows` collection.
+
+Row processing la incremental va bounded theo worksheet rows va pending batches. Memory van co the tang theo workbook metadata va unique shared strings vi parser giu shared-string table de resolve cells; prototype khong claim constant workbook memory.
 
 Upload size limit mac dinh la `IMPORT_MAX_FILE_SIZE_MB=100`. Limit phai duoc enforce trong luc streaming va khong duoc yeu cau buffer toan bo upload truoc khi reject.
+
+HTTP request van mo trong ca hai phase. Chi return `202` sau khi upload da stage, XLSX parsing hoan tat, final partial batch da submit, va moi pending enqueue operation thanh cong. Full batch co the enqueue truoc khi XLSX parser den workbook EOF sau bounded staging; khong bat buoc enqueue truoc HTTP upload EOF.
 
 ## 20. Backpressure
 
 Dung `IMPORT_BATCH_SIZE`, default `500`, va `IMPORT_MAX_PENDING_BATCHES`, default `100`. Implementation phai bound in-flight hoac queued batches va khong busy-loop. Queue backlog inspection duoc chap nhan, nhung khong bat buoc tren moi batch neu bounded producer hoac semaphore strategy sach hon cung cap cung muc an toan.
 
-Backpressure phai lam streaming parser cham lai tu nhien thay vi doc va discard data.
+Trong Phase B, backpressure phai pause XLSX row consumption khi current batch dang cho Redis retry hoac capacity thay vi doc va discard workbook rows. Trong Phase A, byte-limited write stream tu nhien apply backpressure toi multipart file stream.
 
 ## 21. Import Lifecycle
 
@@ -382,6 +388,12 @@ Progress invariants:
 - Voi `COMPLETED`, `rowsProcessed = rowsRead`.
 
 Concurrent progress updates phai dung atomic Redis operations. Khong implement progress counters bang non-atomic read-modify-write.
+
+PostgreSQL van la nguon authoritative cho durable progress va completion. Redis chi luu live snapshot duoc ghi atomically sau khi durable accounting commit. Moi import batch co `batchId` deterministic, duoc tao truoc lan enqueue dau tien va on dinh qua BullMQ retries. Bang `import_batch_accounting` chi luu `(import_id, batch_id)` va terminal aggregate delta; bang nay khong luu input payload hoac business processing state va khong phai PostgreSQL Inbox Pattern.
+
+Voi terminal batch, PostgreSQL insert accounting marker bang `ON CONFLICT DO NOTHING`, chi apply `rowsProcessed`/`rowsSucceeded`/`rowsFailed` khi insert thanh cong, va evaluate completion trong cung transaction. Dieu nay ngan crash window khi progress da commit, worker chet truoc khi BullMQ acknowledge job, va replay neu khong se increment aggregate counters lan nua. ChangeProcessor van la business idempotency boundary rieng biet.
+
+O BullMQ attempt khong phai final, unexpected row-processing error lam job fail ma khong progress accounting. O final permitted attempt, unexpected row errors la terminal row failures; cac row con lai tiep tuc va batch chi duoc account mot lan. Import `FAILED` khong bao gio bi queued batch work doi tro lai `PROCESSING` hoac `COMPLETED`.
 
 ## 23. Transactional Outbox
 

@@ -26,9 +26,11 @@ describe('database schema migrations', () => {
       'product_changes',
       'outbox_events',
       'import_jobs',
+      'import_batch_accounting',
       'polling_checkpoints',
     ]);
 
+    await dataSource.undoLastMigration();
     await dataSource.undoLastMigration();
 
     await expectMissingTables([
@@ -37,6 +39,7 @@ describe('database schema migrations', () => {
       'product_changes',
       'outbox_events',
       'import_jobs',
+      'import_batch_accounting',
       'polling_checkpoints',
     ]);
   });

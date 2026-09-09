@@ -25,36 +25,51 @@
     "test:cov": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./jest.config.cjs --coverage",
     "test:debug": "node --experimental-vm-modules --inspect-brk ./node_modules/jest/bin/jest.js --config ./jest.config.cjs --runInBand",
     "test:e2e": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./jest-e2e.config.cjs",
-    "test:integration": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./jest-integration.config.cjs"
+    "test:integration": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./jest-integration.config.cjs",
+    "load:spike": "node load-tests/run-spike.mjs"
   },
   "dependencies": {
+    "@faker-js/faker": "^10.6.0",
+    "@nestjs/bullmq": "^12.0.0",
     "@nestjs/common": "^12.0.1",
     "@nestjs/config": "12.0.0",
     "@nestjs/core": "^12.0.1",
     "@nestjs/platform-express": "^12.0.1",
+    "@nestjs/schedule": "^12.0.1",
     "@nestjs/typeorm": "^12.0.1",
+    "bullmq": "^6.3.4",
+    "busboy": "1.6.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "ioredis": "^6.0.0",
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "typeorm": "^1.1.1"
+    "sax": "1.6.0",
+    "typeorm": "^1.1.1",
+    "yauzl": "3.3.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
     "@nestjs/mau": "^0.2.6",
     "@nestjs/schematics": "^12.0.0",
     "@nestjs/testing": "^12.0.1",
+    "@types/busboy": "1.5.4",
     "@types/express": "^5.0.0",
     "@types/jest": "30.0.0",
     "@types/node": "^24.0.0",
+    "@types/sax": "1.2.7",
     "@types/supertest": "^7.0.0",
+    "@types/yauzl": "2.10.3",
+    "exceljs": "4.4.0",
     "jest": "30.5.1",
     "oxlint": "^1.58.0",
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
     "ts-jest": "29.4.12",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "xlsx-extract": "0.2.0",
+    "xlsx-stream-reader": "1.1.1"
   }
 }

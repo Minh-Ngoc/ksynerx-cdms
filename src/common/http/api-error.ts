@@ -20,6 +20,7 @@ function flattenValidationMessages(errors: ValidationError[]): string[] {
   const messages = errors.flatMap((error) => {
     const ownMessages = Object.values(error.constraints ?? {});
     const childMessages = flattenValidationMessages(error.children ?? []);
+
     return [...ownMessages, ...childMessages];
   });
 

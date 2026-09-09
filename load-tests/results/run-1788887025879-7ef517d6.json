@@ -1,0 +1,63 @@
+{
+  "runId": "run-1788887025879-7ef517d6",
+  "namespace": "load:run-1788887025879-7ef517d6",
+  "developerMachineEvidence": true,
+  "semantics": "HTTP 202 confirms BullMQ ingress acceptance only; PostgreSQL proves the business-level exactly-once effect.",
+  "configuration": {
+    "baseUrl": "http://localhost:3000",
+    "uniqueLogicalChanges": 100,
+    "duplicateFactor": 20,
+    "spikeVus": 100,
+    "workerConcurrency": 10,
+    "requireBacklog": true
+  },
+  "deliveries": {
+    "baselineAccepted": 100,
+    "k6Attempts": 4000,
+    "expectedK6Attempts": 4000,
+    "totalAttempts": 4100,
+    "duplicateDeliveries": 2000,
+    "staleDeliveries": 2000,
+    "acceptedRequests": 4000,
+    "acceptedRequestRate": 1,
+    "unexpectedHttpFailures": 0
+  },
+  "queue": {
+    "before": {
+      "waiting": 0,
+      "active": 0,
+      "completed": 139,
+      "failed": 0
+    },
+    "maxWaiting": 906,
+    "maxActive": 10,
+    "activeWithinConfiguredWorkerBound": true,
+    "observedSamples": 112,
+    "drain": {
+      "drained": true,
+      "durationMs": 1,
+      "finalCounts": {
+        "waiting": 0,
+        "active": 0,
+        "completed": 1000,
+        "failed": 0
+      }
+    }
+  },
+  "latencyMs": {
+    "p50": 13.885,
+    "p95": 33.9696,
+    "p99": 387.67023999999986
+  },
+  "database": {
+    "expectedUniqueChanges": 100,
+    "productStateCount": 100,
+    "productChangesCount": 100,
+    "outboxCount": 100,
+    "duplicatePairs": 0,
+    "staleRegressions": 0,
+    "unexpectedHistoryVersions": 0,
+    "passed": true
+  },
+  "proofPassed": true
+}

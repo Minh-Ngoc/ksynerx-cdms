@@ -1,114 +1,130 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# CDMS Prototype
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+This repository contains a Change Data Management Service prototype for product and inventory changes. It accepts changes from inventory polling, webhooks, and streamed XLSX uploads, normalizes them into one change contract, buffers them in BullMQ, and applies business correctness in PostgreSQL.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+This is a one-machine prototype, not a production capacity claim. The source remains one NestJS project. Docker Compose runs separate API and worker process roles from the same image; this is neither a monorepo nor a microservice source split.
 
-## Description
+## Architecture
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+```text
+Polling -----\
+Webhook ------> normalize -> BullMQ change queue -> bounded worker
+Excel -------/                                      |
+                                                    v
+                                             ChangeProcessor
+                                                    |
+                                                    v
+                                         PostgreSQL state/history/outbox
 
-## Project setup
-
-```bash
-$ yarn install
+PostgreSQL commit -> outbox publisher -> BullMQ downstream queue -> duplicate-tolerant logger
 ```
 
-## Compile and run the project
+The API process owns HTTP, polling, upload ingestion, SSE, and health checks. The worker process owns change consumption, import-batch consumption, outbox publication, and downstream logging. PostgreSQL is the correctness boundary; Redis/BullMQ provides buffering, retries, and bounded worker concurrency.
+
+## Prerequisites
+
+- Node.js 24 or compatible current Node runtime.
+- pnpm 12.3.4.
+- Docker Desktop or another Docker Compose implementation.
+- k6 for the Task 24 local spike proof.
+
+## Local setup
 
 ```bash
-# development
-$ yarn run start
-
-# watch mode
-$ yarn run start:dev
-
-# production mode
-$ yarn run start:prod
+pnpm --version
 ```
 
-## Run tests
+The expected version is `12.3.4`. If pnpm is not available on `PATH`, bootstrap it once with Corepack:
 
 ```bash
-# unit tests
-$ yarn run test
-
-# e2e tests
-$ yarn run test:e2e
-
-# test coverage
-$ yarn run test:cov
+corepack enable
+corepack prepare pnpm@12.3.4 --activate
+pnpm --version
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+After that, use direct `pnpm` commands:
 
 ```bash
-$ yarn install -g @nestjs/mau
-$ mau deploy
+pnpm install
+cp .env.example .env
+pnpm build
+pnpm migration:run
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+The `.env.example` values are demo-only local defaults. Do not use them as production credentials. Configuration is validated through one typed NestJS configuration boundary.
 
-## Observability
+## Docker Compose
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+```bash
+docker compose up --build
+```
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+Compose starts `cdms` (HTTP API and scheduled polling), `worker` (a separate Nest application context for BullMQ consumers and outbox work), `postgres`, and `redis`. The API is available at `http://localhost:3000`. Run migrations before using a fresh database:
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+```bash
+pnpm migration:run
+```
 
-## Resources
+After `pnpm build`, the same roles can be run locally in separate terminals when PostgreSQL and Redis are already available:
 
-Check out a few resources that may come in handy when working with NestJS:
+```bash
+pnpm start:prod
+pnpm start:worker
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Useful commands
 
-## Support
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:integration
+pnpm test:e2e
+pnpm build
+pnpm load:spike
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+`pnpm load:spike` requires a healthy API, worker, PostgreSQL, Redis, and k6. It first seeds a namespaced baseline, runs duplicate-heavy and stale webhook deliveries, samples the change queue, waits for drain, and verifies PostgreSQL invariants. Configure `BASE_URL`, `UNIQUE_CHANGES`, `DUPLICATE_FACTOR`, `SPIKE_VUS`, `CHANGE_WORKER_CONCURRENCY`, and `REDIS_PORT` as needed.
 
-## Stay in touch
+## API surface
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+- `GET /health`
+- `GET /inventory/products`
+- `GET /inventory/products/:id`
+- `POST /inventory/products`
+- `PATCH /inventory/products/:id`
+- `POST /webhooks/inventory`
+- `POST /imports/products`
+- `GET /imports/:id`
+- `GET /imports/:id/progress` (SSE)
 
-## License
+Polling uses the stable `(updatedAt, productId)` cursor and advances only after a complete page has been accepted by BullMQ. Webhook and import HTTP success means asynchronous enqueue acceptance, not completed business processing.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## Configuration defaults
+
+Validated defaults include `PORT=3000`, PostgreSQL on `localhost:5432`, Redis on `localhost:6379`, `POLL_INTERVAL_MS=5000`, `INVENTORY_SEED_COUNT=1000`, `IMPORT_BATCH_SIZE=500`, `IMPORT_MAX_PENDING_BATCHES=100`, `IMPORT_MAX_FILE_SIZE_MB=100`, `IMPORT_REDIS_RETRY_TIMEOUT_MS=30000`, `CHANGE_WORKER_CONCURRENCY=10`, `OUTBOX_BATCH_SIZE=100`, and `OUTBOX_POLL_INTERVAL_MS=1000`. See `.env.example` and [the architecture document](docs/en/architecture.md).
+
+## Guarantees and limitations
+
+The service provides exactly-once effect at the PostgreSQL/business level, not exactly-once message delivery. A transaction-scoped PostgreSQL advisory lock, canonical fingerprinting, version rules, and the unique `(product_id, version)` constraint protect state/history correctness. The transactional outbox protects the PostgreSQL commit to asynchronous publication boundary, but downstream publication may be duplicated.
+
+Excel files are streamed through a controlled temporary file and a bounded Node stream pipeline. The parser supports the required first-worksheet XLSX subset; shared strings consume memory proportional to the workbook's shared-string table, and staging uses local disk. SSE is a live status channel, not durable messaging. Catastrophic Redis loss after acknowledged enqueue may lose queued work that has not reached PostgreSQL.
+
+Task 24 results are developer-machine evidence, not an SLA or production capacity certification.
+
+## Detailed documentation
+
+- [End-user and reviewer usage guide](docs/en/usage-guide.md) | [Vietnamese](docs/vi/usage-guide.md)
+- [Workflow diagrams](docs/en/workflows.md) | [Vietnamese](docs/vi/workflows.md)
+- [Architecture](docs/en/architecture.md) | [Vietnamese](docs/vi/architecture.md)
+- [Exactly-once effect](docs/en/exactly-once.md) | [Vietnamese](docs/vi/exactly-once.md)
+- [Failure handling](docs/en/failure-handling.md) | [Vietnamese](docs/vi/failure-handling.md)
+- [Excel streaming](docs/en/excel-streaming.md) | [Vietnamese](docs/vi/excel-streaming.md)
+- [Transactional outbox](docs/en/transactional-outbox.md) | [Vietnamese](docs/vi/transactional-outbox.md)
+- [Redis/BullMQ failure model](docs/en/redis-bullmq-failure-model.md) | [Vietnamese](docs/vi/redis-bullmq-failure-model.md)
+- [SSE progress](docs/en/sse-progress.md) | [Vietnamese](docs/vi/sse-progress.md)
+- [Testing](docs/en/testing.md) | [Vietnamese](docs/vi/testing.md)
+- [AI usage disclosure](docs/en/ai-usage.md) | [Vietnamese](docs/vi/ai-usage.md)
+- [Architecture decisions](docs/en/adr/0001-one-nestjs-project.md)
+
+The AI usage disclosure records assistance, human review, verification evidence, rejected approaches, and remaining limitations.

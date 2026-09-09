@@ -16,7 +16,7 @@ describe('import API response contracts', () => {
   it('does not fabricate percent when totalRows is unknown', () => {
     expect(
       createImportProgressSnapshot({
-        id: 'import-1',
+        importId: 'import-1',
         status: ImportJobStatus.Processing,
         rowsRead: 5,
         rowsProcessed: 2,

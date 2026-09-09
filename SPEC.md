@@ -333,21 +333,27 @@ Webhook processing validates input, normalizes payload, enqueues normalized chan
 
 ## 19. Excel Streaming
 
-Excel imports must use a streaming-capable library such as ExcelJS streaming reader after implementation-time verification. The flow is:
+Excel imports use a narrow internal streaming reader over the staged XLSX file. The flow has two bounded phases:
 
 ```text
-multipart stream -> streaming Excel reader -> row validation -> normalization -> bounded batches -> BullMQ
+multipart file stream -> bounded temporary XLSX file -> ZIP entry Readable -> SAX row stream -> object-mode batch Transform -> BullMQ Writable
 ```
 
-The server must not load the full upload, workbook, or full row set into memory.
+Phase A streams multipart bytes to a generated, unique path under a controlled temporary directory. The client filename must not be used as a filesystem path. The temporary file is ingestion staging only, not durable storage, and must be removed in `finally` on success, parser failure, Redis retry timeout, upload limit failure, request/stream failure, or any other terminal ingestion error.
+
+Phase B begins only after Phase A completes successfully. The reader opens only required ZIP entries, retains shared strings as a lookup table, and exposes worksheet rows through an object-mode Node stream. The batch Transform and BullMQ Writable must preserve Node stream backpressure so a pending queue write stops additional worksheet consumption. The server must not load the full upload, XLSX buffer, or worksheet row set into memory. It must not use `Buffer.concat`, `fs.readFile` for the upload, `Workbook.xlsx.load(buffer)`, `XLSX.read(fullBuffer)`, or an unbounded `allRows` collection.
+
+Row processing is incremental and bounded with respect to worksheet rows and pending batches. Memory may still grow with workbook metadata and unique shared strings because the parser retains the shared-string table to resolve cells; the prototype does not claim constant workbook memory.
 
 The default upload size limit is `IMPORT_MAX_FILE_SIZE_MB=100`. The limit must be enforced while streaming and must not require buffering the whole upload before rejection.
+
+The HTTP request remains open through both phases. Return `202` only after the upload has staged, XLSX parsing has completed, the final partial batch has been submitted, and all pending enqueue operations succeeded. A full batch may enqueue before the XLSX parser reaches workbook EOF after bounded staging; it is not required to enqueue before HTTP upload EOF.
 
 ## 20. Backpressure
 
 Use `IMPORT_BATCH_SIZE`, default `500`, and `IMPORT_MAX_PENDING_BATCHES`, default `100`. The implementation must bound in-flight or queued batches and must not busy-loop. Queue backlog inspection is acceptable, but it is not required on every batch if a cleaner bounded producer or semaphore strategy provides the same safety.
 
-Backpressure must naturally slow the streaming parser rather than reading and discarding data.
+During Phase B, backpressure must pause XLSX row consumption while the current batch waits for Redis retry or capacity rather than reading and discarding workbook rows. During Phase A, the byte-limited write stream naturally applies backpressure to the multipart file stream.
 
 ## 21. Import Lifecycle
 
@@ -382,6 +388,12 @@ Progress invariants:
 - For `COMPLETED`, `rowsProcessed = rowsRead`.
 
 Concurrent progress updates must use atomic Redis operations. Do not implement progress counters with non-atomic read-modify-write.
+
+PostgreSQL remains authoritative for durable progress and completion. Redis stores only an atomically written live snapshot after durable accounting commits. Each import batch carries a deterministic `batchId`, generated before its first enqueue and stable across BullMQ retries. The `import_batch_accounting` table stores only `(import_id, batch_id)` and the terminal aggregate delta; it does not store input payloads or business processing state and is not a PostgreSQL Inbox Pattern.
+
+For a terminal batch, PostgreSQL inserts its accounting marker with `ON CONFLICT DO NOTHING`, applies `rowsProcessed`/`rowsSucceeded`/`rowsFailed` only when that insert succeeds, and evaluates completion in the same transaction. This prevents the crash window where progress commits, a worker dies before BullMQ acknowledges the job, and the replay would otherwise increment aggregate counters again. ChangeProcessor remains the separate business idempotency boundary.
+
+On a non-final BullMQ attempt, an unexpected row-processing error fails the job without progress accounting. On the final permitted attempt, unexpected row errors are terminal row failures; remaining rows continue and the batch is accounted once. A `FAILED` import is never changed back to `PROCESSING` or `COMPLETED` by queued batch work.
 
 ## 23. Transactional Outbox
 

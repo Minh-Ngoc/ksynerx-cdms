@@ -2,6 +2,7 @@ import { DataSourceOptions } from 'typeorm';
 
 import { EnvironmentConfig } from '../config/env.validation.js';
 import { InitialCdmsSchema1760000000000 } from './migrations/1760000000000-InitialCdmsSchema.js';
+import { ImportBatchAccounting1760000000001 } from './migrations/1760000000001-ImportBatchAccounting.js';
 import { DATABASE_ENTITIES } from './entities.js';
 
 export interface AppDatabaseConfig {
@@ -31,7 +32,7 @@ export function createAppDataSourceOptions(database: AppDatabaseConfig): DataSou
     password: database.password,
     database: database.name,
     entities: DATABASE_ENTITIES,
-    migrations: [InitialCdmsSchema1760000000000],
+    migrations: [InitialCdmsSchema1760000000000, ImportBatchAccounting1760000000001],
     migrationsTableName: 'typeorm_migrations',
     synchronize: false,
   };

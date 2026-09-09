@@ -1,6 +1,7 @@
 import { INestApplicationContext } from '@nestjs/common';
 
 import { createWorkerApplicationContext } from './worker.bootstrap.js';
+import { WorkerModule } from './worker.module.js';
 
 describe('createWorkerApplicationContext', () => {
   it('creates a standalone Nest context without starting an HTTP listener', async () => {
@@ -18,7 +19,7 @@ describe('createWorkerApplicationContext', () => {
     });
 
     expect(result).toBe(applicationContext);
-    expect(calls).toHaveLength(1);
+    expect(calls).toEqual([WorkerModule]);
     expect(createCalls).toHaveLength(0);
   });
 });

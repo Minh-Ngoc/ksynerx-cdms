@@ -46,4 +46,18 @@ describe('Excel row normalization before fingerprinting', () => {
       }),
     ).toThrow();
   });
+
+  it('rejects unsafe numeric Excel prices instead of rounding them into canonical cents', () => {
+    expect(() =>
+      normalizeExcelProductChange({
+        productId: 'product-1',
+        version: 4,
+        sku: 'SKU-001',
+        name: 'Product',
+        price: 100.005,
+        quantity: 3,
+        observedAt: new Date('2026-01-02T03:04:05.000Z'),
+      }),
+    ).toThrow();
+  });
 });

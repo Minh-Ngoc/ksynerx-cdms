@@ -4,6 +4,7 @@ module.exports = {
   extensionsToTreatAsEsm: ['.ts'],
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: '.',
+  maxWorkers: 1,
   setupFiles: ['<rootDir>/test/jest.setup.ts'],
   testRegex: '.*\\.e2e-spec\\.ts$',
   transform: {

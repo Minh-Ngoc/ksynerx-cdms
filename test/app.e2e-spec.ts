@@ -4,6 +4,7 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 
 import { AppModule } from './../src/app.module.js';
+import { InventorySeedService } from '../src/modules/inventory/inventory-seed.service.js';
 
 describe('AppModule (e2e)', () => {
   let app: INestApplication;
@@ -18,6 +19,8 @@ describe('AppModule (e2e)', () => {
     })
       .overrideProvider(DataSource)
       .useValue(dataSource)
+      .overrideProvider(InventorySeedService)
+      .useValue({ onApplicationBootstrap: async () => undefined })
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -31,6 +34,8 @@ describe('AppModule (e2e)', () => {
   });
 
   afterEach(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
   });
 });

@@ -1,20 +1,15 @@
-export enum ImportJobStatus {
-  Created = 'CREATED',
-  Uploading = 'UPLOADING',
-  Processing = 'PROCESSING',
-  Completed = 'COMPLETED',
-  Failed = 'FAILED',
-}
+export { ImportStatus as ImportJobStatus } from '../entities/import-job.entity.js';
+import { ImportStatus } from '../entities/import-job.entity.js';
 
 export interface ImportCreateResponse {
   importId: string;
-  status: ImportJobStatus.Processing;
+  status: ImportStatus.Processing;
 }
 
 export interface ImportStatusResponse {
   id: string;
   filename: string;
-  status: ImportJobStatus;
+  status: ImportStatus;
   rowsRead: number;
   rowsProcessed: number;
   rowsSucceeded: number;
@@ -27,8 +22,8 @@ export interface ImportStatusResponse {
 }
 
 export interface ImportProgressSnapshot {
-  id: string;
-  status: ImportJobStatus;
+  importId: string;
+  status: ImportStatus;
   rowsRead: number;
   rowsProcessed: number;
   rowsSucceeded: number;
@@ -47,11 +42,14 @@ export interface ImportProgressEvent {
 type ProgressInput = Omit<ImportProgressSnapshot, 'percent'>;
 
 export function createImportProgressSnapshot(input: ProgressInput): ImportProgressSnapshot {
+  const percent = input.totalRows === null
+    ? null
+    : input.totalRows === 0
+      ? input.status === ImportStatus.Completed ? 100 : null
+      : Math.min(100, Math.round((input.rowsProcessed / input.totalRows) * 100));
+
   return {
     ...input,
-    percent:
-      input.totalRows === null || input.totalRows === 0
-        ? null
-        : Math.min(100, Math.round((input.rowsProcessed / input.totalRows) * 100)),
+    percent,
   };
 }

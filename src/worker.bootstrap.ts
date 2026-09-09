@@ -1,8 +1,8 @@
 import { INestApplicationContext, Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 
-import { AppModule } from './app.module.js';
 import { AppConfigService } from './config/app-config.service.js';
+import { WorkerModule } from './worker.module.js';
 
 interface WorkerApplicationContextFactory {
   createApplicationContext(module: unknown): Promise<INestApplicationContext>;
@@ -14,7 +14,7 @@ export function createWorkerApplicationContext(
 ): Promise<INestApplicationContext> {
   // The worker role uses Nest's standalone application context so it shares DI/config with the API
   // process without opening an HTTP listener or introducing a second source application.
-  return nestFactory.createApplicationContext(AppModule);
+  return nestFactory.createApplicationContext(WorkerModule);
 }
 
 export async function bootstrapWorker(): Promise<void> {
