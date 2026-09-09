@@ -106,7 +106,47 @@ The validated defaults are:
 
 Use unique product IDs such as review-20260909-001 during manual review. The API seeds inventory only when the inventory table is empty, so a fresh database may also contain the configured seed products.
 
-## 3. Health check
+## 3. Demo dataset
+
+The repository includes a deterministic product/inventory demo scenario for reviewers. It uses `@faker-js/faker` with seed `20260910` by default and scopes generated identifiers to `demo-`/`DEMO-`.
+
+Run it after PostgreSQL and Redis are healthy and migrations are applied:
+
+```bash
+pnpm demo:seed
+pnpm demo:verify
+pnpm demo:clean
+```
+
+`demo:seed` starts a temporary API and worker context, keeps the regular startup seed at zero, creates 50 source inventory rows, polls 15 of them through versions 1 to 3 using the real checkpoint and BullMQ path, sends 10 webhook products with ordered version, duplicate, stale, and same-version conflict deliveries, and uploads two XLSX workbooks through the production streaming import endpoint. One workbook has 11 valid rows; the other has 8 valid rows and 2 malformed rows. The runner waits for queue and outbox drain using durable queue state before reporting counts.
+
+The scenario replays `demo-poll-015` through Polling, Webhook, and Excel with the same canonical `productId`/`version`/payload. Since `source` is delivery metadata and is excluded from the canonical fingerprint, the cross-source replay is a duplicate and does not create a second history row.
+
+The default local result is approximately 50 source inventory rows, 38 product states, 54 accepted history rows, 54 outbox rows, and 2 completed imports. Use `DEMO_SEED=<integer>` for another deterministic Faker dataset. `demo:clean` removes only `demo-` source/business/import rows and demo queue jobs; it does not truncate shared tables or touch unrelated data.
+
+Reviewer SQL:
+
+```sql
+SELECT product_id, version, count(*)
+FROM product_changes
+WHERE product_id LIKE 'demo-%'
+GROUP BY product_id, version
+HAVING count(*) > 1;
+
+SELECT s.product_id, s.version AS state_version, max(c.version) AS max_history_version
+FROM product_state s
+JOIN product_changes c ON c.product_id = s.product_id
+WHERE s.product_id LIKE 'demo-%'
+GROUP BY s.product_id, s.version
+HAVING s.version <> max(c.version);
+
+SELECT filename, status, rows_read, rows_processed, rows_succeeded, rows_failed
+FROM import_jobs
+WHERE filename LIKE 'demo-%'
+ORDER BY created_at;
+```
+
+## 4. Health check
 
 ~~~bash
 curl -i http://localhost:3000/health
@@ -120,7 +160,7 @@ With PostgreSQL and Redis available, expect HTTP 200 and a response like:
 
 When either dependency is unavailable, expect HTTP 503, status "error", and the affected dependency reported as "down". This endpoint is the first check after startup and after any infrastructure failure test.
 
-## 4. Inventory API smoke test
+## 5. Inventory API smoke test
 
 Create a product. Save the returned id for the read and update calls:
 
@@ -149,7 +189,7 @@ curl -i -X PATCH http://localhost:3000/inventory/products/<product-id> \
 
 The update increments the product version. A nonexistent product returns 404; invalid prices, negative quantities, or an empty patch return 400.
 
-## 5. Scheduled polling scenario
+## 6. Scheduled polling scenario
 
 Polling reads the inventory table on the configured interval and submits normalized changes with source POLLING.
 
@@ -168,7 +208,7 @@ curl -s -X PATCH http://localhost:3000/inventory/products/<product-id> \
 
 The polling checkpoint is the composite (updated_at, product_id) cursor. It advances only after the complete page has been accepted by BullMQ, so a Redis enqueue failure does not silently advance the checkpoint past unaccepted work. Polling and webhook/import messages converge through the same PostgreSQL correctness rules.
 
-## 6. Webhook scenario
+## 7. Webhook scenario
 
 Send a valid change. observedAt is optional but is included here for a reproducible example:
 
@@ -230,7 +270,7 @@ curl -s -X POST http://localhost:3000/webhooks/inventory \
 
 This is a same-version conflict. It must not overwrite the accepted version-5 state. The HTTP layer reports enqueue acceptance; the duplicate, stale, and conflict classifications are visible in worker logs and in the database proof queries.
 
-## 7. Excel import
+## 8. Excel import
 
 ### Required workbook format
 
@@ -300,7 +340,7 @@ curl -i -X POST http://localhost:3000/imports/products -F 'file=@corrupt.xlsx'
 
 Expected behavior is a failed import or an immediate rejected request, depending on where parsing fails. A workbook with a missing or reordered required header is also a file-level validation failure. File-level failure does not roll back batches that were already acknowledged by Redis; inspect the import status and database rows to see the recorded boundary.
 
-## 8. Import behavior to verify
+## 9. Import behavior to verify
 
 - CREATED, UPLOADING, PROCESSING, COMPLETED, and FAILED are the import lifecycle states.
 - A successful upload response means enqueue acceptance, not completed processing.
@@ -309,13 +349,13 @@ Expected behavior is a failed import or an immediate rejected request, depending
 - Redis enqueue uses bounded retry. If the timeout is reached, the import is failed rather than left indefinitely in an ambiguous state.
 - Worker retries can redeliver messages; PostgreSQL version, fingerprint, locks, and unique constraints protect the business effect.
 
-## 9. Review the outbox path
+## 10. Review the outbox path
 
 Each newly accepted logical change writes business state, change history, and a pending transactional outbox event in the same PostgreSQL transaction. The outbox publisher later sends a downstream BullMQ job. The downstream consumer is intentionally duplicate-tolerant and logs structured delivery; it does not mutate business state.
 
 After a webhook or import has processed, use the SQL in Section 11 to verify that a logical accepted change has one state row, one history row for its version, and a corresponding outbox event. Downstream delivery duplication is allowed by this prototype, while business-state duplication is not.
 
-## 10. Automated verification commands
+## 11. Automated verification commands
 
 Run the focused tests first when reviewing one subsystem:
 
@@ -342,7 +382,7 @@ git diff --check
 
 The integration and end-to-end suites use the configured local PostgreSQL database and reset their test data. Do not run them against a database containing data you need to preserve.
 
-## 11. PostgreSQL verification
+## 12. PostgreSQL verification
 
 Connect through the Compose PostgreSQL container:
 
@@ -384,9 +424,9 @@ SELECT name, updated_at, product_id
 FROM polling_checkpoints;
 ~~~
 
-The duplicate-pair query should return no rows for a correctly processed logical version. For a successful accepted change, compare product_state, product_changes, and outbox_events by product ID and version. product_changes records the ingestion source as POLLING, WEBHOOK, or IMPORT.
+The duplicate-pair query should return no rows for a correctly processed logical version. For a successful accepted change, compare product_state, product_changes, and outbox_events by product ID and version. product_changes records the ingestion source as POLLING, WEBHOOK, or EXCEL.
 
-## 12. Concurrency proof
+## 13. Concurrency proof
 
 The focused command is:
 
@@ -404,7 +444,7 @@ The proof covers these expected outcomes:
 
 The HTTP responses in these tests represent ingress acceptance. The assertions that prove correctness are the committed PostgreSQL state, history, outbox, and unique constraints.
 
-## 13. Failure scenarios
+## 14. Failure scenarios
 
 These checks are intended for a disposable local environment.
 
@@ -441,7 +481,7 @@ docker compose restart worker
 
 Redis retains queued work during this restart. After the worker returns, query the database and confirm that each logical change has the expected single business effect. This demonstrates retry/restart handling; it is not an exactly-once delivery claim.
 
-## 14. Local k6 spike proof
+## 15. Local k6 spike proof
 
 The preferred command is the repository wrapper:
 
@@ -504,7 +544,7 @@ The preserved report is load-tests/results/run-1788887228601-1abb3b45.json. Its 
 | Duplicate pairs / stale regressions | 0 / 0 |
 | Proof passed | true |
 
-## 15. Expected reviewer checklist
+## 16. Expected reviewer checklist
 
 - [ ] GET /health is HTTP 200 with PostgreSQL and Redis up.
 - [ ] Inventory create, read, and patch work; patch increments version.
@@ -519,7 +559,7 @@ The preserved report is load-tests/results/run-1788887228601-1abb3b45.json. Its 
 - [ ] Focused tests, full tests, lint, typecheck, build, and git diff --check pass.
 - [ ] The k6 wrapper, if run, reports a drained queue and passing database proof.
 
-## 16. Cleanup and troubleshooting
+## 17. Cleanup and troubleshooting
 
 Stop the Compose services without deleting local database volumes:
 

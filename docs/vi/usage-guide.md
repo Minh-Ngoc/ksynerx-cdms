@@ -106,7 +106,47 @@ Default đã validate:
 
 Dùng product ID riêng như `review-20260909-001` khi review thủ công. API chỉ seed inventory khi bảng inventory rỗng, vì vậy database mới có thể có thêm seed products theo cấu hình.
 
-## 3. Health check
+## 3. Dữ liệu demo
+
+Repository có một scenario demo deterministic trong domain product/inventory để reviewer sử dụng. Scenario dùng `@faker-js/faker` với seed mặc định `20260910` và giới hạn identifier sinh ra trong namespace `demo-`/`DEMO-`.
+
+Chạy sau khi PostgreSQL và Redis healthy, đồng thời migration đã được apply:
+
+```bash
+pnpm demo:seed
+pnpm demo:verify
+pnpm demo:clean
+```
+
+`demo:seed` khởi động tạm thời API và worker context, giữ startup seed thông thường ở mức zero, tạo 50 source inventory row, đưa 15 row qua polling ở version 1 đến 3 bằng checkpoint và BullMQ path thật, gửi 10 webhook product với version có thứ tự cùng delivery duplicate, stale và conflict cùng version, rồi upload hai workbook XLSX qua production streaming import endpoint. Một workbook có 11 row hợp lệ; workbook còn lại có 8 row hợp lệ và 2 row malformed. Runner chờ queue và outbox drain bằng durable queue state trước khi in count.
+
+Scenario replay `demo-poll-015` qua Polling, Webhook và Excel với cùng canonical `productId`/`version`/payload. Vì `source` là delivery metadata và bị loại khỏi canonical fingerprint, cross-source replay là duplicate và không tạo history row thứ hai.
+
+Kết quả local mặc định xấp xỉ 50 source inventory row, 38 product state, 54 history row được accept, 54 outbox row và 2 import hoàn tất. Dùng `DEMO_SEED=<integer>` để tạo dataset Faker deterministic khác. `demo:clean` chỉ xóa source/business/import row và demo queue job có namespace `demo-`; không truncate table dùng chung hoặc chạm dữ liệu không liên quan.
+
+SQL cho reviewer:
+
+```sql
+SELECT product_id, version, count(*)
+FROM product_changes
+WHERE product_id LIKE 'demo-%'
+GROUP BY product_id, version
+HAVING count(*) > 1;
+
+SELECT s.product_id, s.version AS state_version, max(c.version) AS max_history_version
+FROM product_state s
+JOIN product_changes c ON c.product_id = s.product_id
+WHERE s.product_id LIKE 'demo-%'
+GROUP BY s.product_id, s.version
+HAVING s.version <> max(c.version);
+
+SELECT filename, status, rows_read, rows_processed, rows_succeeded, rows_failed
+FROM import_jobs
+WHERE filename LIKE 'demo-%'
+ORDER BY created_at;
+```
+
+## 4. Health check
 
 ~~~bash
 curl -i http://localhost:3000/health
@@ -120,7 +160,7 @@ Khi PostgreSQL và Redis sẵn sàng, kết quả mong đợi là HTTP 200 và r
 
 Khi một dependency không sẵn sàng, mong đợi HTTP 503, status là "error", và dependency bị lỗi được báo là "down". Đây là check đầu tiên sau startup và sau mỗi failure test hạ tầng.
 
-## 4. Inventory API smoke test
+## 5. Inventory API smoke test
 
 Tạo product. Lưu id trong response để dùng cho các lệnh đọc và update:
 
@@ -149,7 +189,7 @@ curl -i -X PATCH http://localhost:3000/inventory/products/<product-id> \
 
 Update làm tăng version của product. Product không tồn tại trả 404; price không hợp lệ, quantity âm, hoặc patch rỗng trả 400.
 
-## 5. Kịch bản scheduled polling
+## 6. Kịch bản scheduled polling
 
 Polling đọc inventory table theo interval và submit change đã normalize với source POLLING.
 
@@ -168,7 +208,7 @@ curl -s -X PATCH http://localhost:3000/inventory/products/<product-id> \
 
 Polling checkpoint là composite cursor (updated_at, product_id). Checkpoint chỉ advance sau khi cả page đã được BullMQ chấp nhận, vì vậy Redis enqueue failure không âm thầm đẩy checkpoint qua phần work chưa được chấp nhận. Polling, webhook và import đều đi qua cùng một bộ quy tắc correctness của PostgreSQL.
 
-## 6. Kịch bản webhook
+## 7. Kịch bản webhook
 
 Gửi một change hợp lệ. `observedAt` là tùy chọn nhưng được dùng trong ví dụ để có kết quả lặp lại được:
 
@@ -230,7 +270,7 @@ curl -s -X POST http://localhost:3000/webhooks/inventory \
 
 Đây là same-version conflict. Nó không được ghi đè state version 5 đã được chấp nhận. HTTP layer chỉ báo enqueue acceptance; các phân loại duplicate, stale và conflict xuất hiện trong worker logs và các query proof database.
 
-## 7. Excel import
+## 8. Excel import
 
 ### Định dạng workbook bắt buộc
 
@@ -300,7 +340,7 @@ curl -i -X POST http://localhost:3000/imports/products -F 'file=@corrupt.xlsx'
 
 Hành vi mong đợi là import bị failed hoặc request bị reject ngay, dù parser lỗi ở bước nào. Workbook thiếu hoặc sắp xếp lại required header cũng là file-level validation failure. File-level failure không rollback các batch đã được Redis acknowledge; kiểm tra import status và database rows để thấy boundary đã ghi nhận.
 
-## 8. Hành vi import cần verify
+## 9. Hành vi import cần verify
 
 - CREATED, UPLOADING, PROCESSING, COMPLETED và FAILED là các trạng thái trong lifecycle import.
 - Upload response thành công chỉ là enqueue acceptance, không phải processing đã hoàn tất.
@@ -309,13 +349,13 @@ Hành vi mong đợi là import bị failed hoặc request bị reject ngay, dù
 - Redis enqueue dùng retry có giới hạn. Nếu hết timeout, import bị failed thay vì bị treo ở trạng thái mơ hồ.
 - Worker retry có thể redeliver message; version, fingerprint, lock và unique constraint PostgreSQL bảo vệ business effect.
 
-## 9. Review outbox path
+## 10. Review outbox path
 
 Mỗi logical change được chấp nhận sẽ ghi business state, change history và pending transactional outbox event trong cùng một PostgreSQL transaction. Outbox publisher sau đó gửi BullMQ job downstream. Downstream consumer được thiết kế duplicate-tolerant và chỉ ghi structured log; nó không mutate business state.
 
 Sau khi webhook hoặc import đã process, dùng SQL ở Section 11 để verify logical change được chấp nhận có một state row, một history row cho version đó và outbox event tương ứng. Downstream delivery bị lặp được chấp nhận trong prototype này, nhưng business state không được lặp.
 
-## 10. Lệnh verification tự động
+## 11. Lệnh verification tự động
 
 Chạy focused test trước khi review một subsystem:
 
@@ -342,7 +382,7 @@ git diff --check
 
 Integration và end-to-end suite dùng PostgreSQL local theo cấu hình và reset test data dùng chung. Không chạy trên database có data cần bảo toàn.
 
-## 11. Kiểm tra PostgreSQL
+## 12. Kiểm tra PostgreSQL
 
 Kết nối qua PostgreSQL container của Compose:
 
@@ -384,9 +424,9 @@ SELECT name, updated_at, product_id
 FROM polling_checkpoints;
 ~~~
 
-Query duplicate pair phải trả về không có row nếu logical version được process dùng. Với accepted change thành công, đối chiếu product_state, product_changes và outbox_events theo product ID và version. product_changes ghi source ingestion là POLLING, WEBHOOK hoặc IMPORT.
+Query duplicate pair phải trả về không có row nếu logical version được process dùng. Với accepted change thành công, đối chiếu product_state, product_changes và outbox_events theo product ID và version. product_changes ghi source ingestion là POLLING, WEBHOOK hoặc EXCEL.
 
-## 12. Concurrency proof
+## 13. Concurrency proof
 
 Lệnh focused:
 
@@ -404,7 +444,7 @@ Proof bao gồm các kết quả mong đợi:
 
 HTTP response trong các test này thể hiện ingress acceptance. Assertion để chứng minh correctness là PostgreSQL state, history, outbox đã commit và unique constraint.
 
-## 13. Failure scenarios
+## 14. Failure scenarios
 
 Các check này dành cho local environment có thể xóa.
 
@@ -441,7 +481,7 @@ docker compose restart worker
 
 Redis giữ queued work trong lúc worker restart. Sau khi worker trở lại, query database và xác nhận mỗi logical change có đúng một business effect. Đây là minh chứng cho retry/restart handling; không phải tuyên bố exactly-once delivery.
 
-## 14. Local k6 spike proof
+## 15. Local k6 spike proof
 
 Lệnh ưu tiên là repository wrapper:
 
@@ -504,7 +544,7 @@ Report được lưu là load-tests/results/run-1788887228601-1abb3b45.json. Cá
 | Duplicate pairs / stale regressions | 0 / 0 |
 | Proof passed | true |
 
-## 15. Checklist cho reviewer
+## 16. Checklist cho reviewer
 
 - [ ] GET /health trả HTTP 200 với PostgreSQL và Redis up.
 - [ ] Inventory create, read và patch hoạt động; patch làm tăng version.
@@ -519,7 +559,7 @@ Report được lưu là load-tests/results/run-1788887228601-1abb3b45.json. Cá
 - [ ] Focused test, full test, lint, typecheck, build và git diff --check pass.
 - [ ] Nếu chạy k6 wrapper, report cho thấy queue đã drain và database proof pass.
 
-## 16. Cleanup và troubleshooting
+## 17. Cleanup và troubleshooting
 
 Dùng Compose mà không xóa local database volume:
 

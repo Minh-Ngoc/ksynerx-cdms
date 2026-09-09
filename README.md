@@ -86,6 +86,44 @@ pnpm load:spike
 
 `pnpm load:spike` requires a healthy API, worker, PostgreSQL, Redis, and k6. It first seeds a namespaced baseline, runs duplicate-heavy and stale webhook deliveries, samples the change queue, waits for drain, and verifies PostgreSQL invariants. Configure `BASE_URL`, `UNIQUE_CHANGES`, `DUPLICATE_FACTOR`, `SPIKE_VUS`, `CHANGE_WORKER_CONCURRENCY`, and `REDIS_PORT` as needed.
 
+## Demo dataset
+
+The completed prototype includes a deterministic, product/inventory-only demonstration dataset. It uses `@faker-js/faker` with seed `20260910` by default and namespaces every generated identifier with `demo-`/`DEMO-`.
+
+After PostgreSQL and Redis are running and migrations have been applied:
+
+```bash
+pnpm demo:seed
+pnpm demo:verify
+pnpm demo:clean
+```
+
+`demo:seed` starts a temporary API and worker context, disables the uncontrolled startup inventory seed, inserts 50 source inventory products, drives 15 products through real polling at versions 1 to 3, sends 10 webhook products with duplicate/stale/conflict deliveries, and uploads one valid and one partially invalid XLSX through `POST /imports/products`. It waits for BullMQ and outbox work to drain before printing counts. Set `DEMO_SEED` to use another deterministic Faker seed. `demo:clean` deletes only rows and queued jobs in the `demo-` namespace; it never truncates shared tables.
+
+The verified local run produced 50 demo inventory rows, 38 product states, 54 accepted history rows, 54 corresponding outbox rows, and 2 completed imports. The valid workbook contained 11 valid rows; the partial workbook contained 8 valid rows and 2 malformed rows. `demo-poll-015` is replayed through Polling, Webhook, and Excel with the same canonical product/version and is expected to create one accepted history row because source is excluded from the fingerprint.
+
+Useful reviewer SQL is namespace-scoped:
+
+```sql
+SELECT product_id, version, count(*)
+FROM product_changes
+WHERE product_id LIKE 'demo-%'
+GROUP BY product_id, version
+HAVING count(*) > 1;
+
+SELECT s.product_id, s.version AS state_version, max(c.version) AS max_history_version
+FROM product_state s
+JOIN product_changes c ON c.product_id = s.product_id
+WHERE s.product_id LIKE 'demo-%'
+GROUP BY s.product_id, s.version
+HAVING s.version <> max(c.version);
+
+SELECT filename, status, rows_read, rows_processed, rows_succeeded, rows_failed
+FROM import_jobs
+WHERE filename LIKE 'demo-%'
+ORDER BY created_at;
+```
+
 ## API surface
 
 - `GET /health`

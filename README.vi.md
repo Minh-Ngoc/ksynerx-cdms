@@ -86,6 +86,44 @@ pnpm load:spike
 
 `pnpm load:spike` cần API, worker, PostgreSQL, Redis healthy và k6. Lệnh này seed baseline có namespace riêng, chạy webhook duplicate-heavy và stale, sample change queue, chờ queue drain, sau đó verify PostgreSQL invariants. Có thể cấu hình `BASE_URL`, `UNIQUE_CHANGES`, `DUPLICATE_FACTOR`, `SPIKE_VUS`, `CHANGE_WORKER_CONCURRENCY` và `REDIS_PORT`.
 
+## Dữ liệu demo
+
+Prototype hoàn chỉnh có bộ dữ liệu demo deterministic chỉ trong domain product/inventory. Bộ dữ liệu dùng `@faker-js/faker` với seed mặc định `20260910` và namespace mọi identifier sinh ra bằng `demo-`/`DEMO-`.
+
+Sau khi PostgreSQL và Redis đã chạy, đồng thời migration đã được apply:
+
+```bash
+pnpm demo:seed
+pnpm demo:verify
+pnpm demo:clean
+```
+
+`demo:seed` khởi động tạm thời API và worker context, tắt startup inventory seed không kiểm soát, tạo 50 source inventory product, đưa 15 product qua polling thật ở version 1 đến 3, gửi 10 webhook product với delivery duplicate/stale/conflict, và upload một XLSX hợp lệ cùng một XLSX có một phần malformed qua `POST /imports/products`. Lệnh chờ BullMQ và outbox drain trước khi in count. Dùng `DEMO_SEED` để chọn seed Faker deterministic khác. `demo:clean` chỉ xóa row và queued job trong namespace `demo-`; không truncate table dùng chung.
+
+Local run đã verify tạo 50 demo inventory row, 38 product state, 54 history row được accept, 54 outbox row tương ứng và 2 import đã hoàn tất. Workbook hợp lệ có 11 row hợp lệ; workbook partial có 8 row hợp lệ và 2 row malformed. `demo-poll-015` được replay qua Polling, Webhook và Excel với cùng canonical product/version, và được kỳ vọng chỉ tạo một history row được accept vì source không nằm trong fingerprint.
+
+SQL hữu ích cho reviewer, đều giới hạn trong namespace:
+
+```sql
+SELECT product_id, version, count(*)
+FROM product_changes
+WHERE product_id LIKE 'demo-%'
+GROUP BY product_id, version
+HAVING count(*) > 1;
+
+SELECT s.product_id, s.version AS state_version, max(c.version) AS max_history_version
+FROM product_state s
+JOIN product_changes c ON c.product_id = s.product_id
+WHERE s.product_id LIKE 'demo-%'
+GROUP BY s.product_id, s.version
+HAVING s.version <> max(c.version);
+
+SELECT filename, status, rows_read, rows_processed, rows_succeeded, rows_failed
+FROM import_jobs
+WHERE filename LIKE 'demo-%'
+ORDER BY created_at;
+```
+
 ## API
 
 - `GET /health`
